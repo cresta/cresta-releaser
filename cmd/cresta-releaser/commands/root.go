@@ -1,6 +1,9 @@
 package commands
 
 import (
+	"context"
+	"fmt"
+	"github.com/cresta/cresta-releaser/releaser"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -8,20 +11,48 @@ import (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "cresta-releaser",
-	Short: "Help deploy new releases",
+	Use:     "cresta-releaser",
+	Short:   "Help deploy new releases",
+	PreRunE: verifyOutputFormat,
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	err := rootCmd.Execute()
+	err := rootCmd.ExecuteContext(context.Background())
 	if err != nil {
 		os.Exit(1)
 	}
 }
 
+var api releaser.Api
+
+func verifyOutputFormat(_ *cobra.Command, _ []string) error {
+	of := getOutputFormat()
+	if of == nil {
+		return fmt.Errorf("output format not supported")
+	}
+	return nil
+}
+
+func getOutputFormat() outputFormatter {
+	if outputFormat == nil {
+		return nil
+	}
+	switch *outputFormat {
+	case "":
+		return &NewlineFormatter{}
+	case "auto":
+		return &NewlineFormatter{}
+	case "json":
+		return &JSONFormatter{}
+	default:
+		panic("Invalid formatter")
+	}
+	return nil
+}
+
+var outputFormat *string
+
 func init() {
-	rootCmd.Flags().StringP("output", "o", "", "Output format of the command")
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	outputFormat = rootCmd.PersistentFlags().StringP("output", "o", "", "Output format of the command")
+	api = releaser.NewFromCommandLine()
 }
