@@ -3,15 +3,22 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/k0kubun/pp/v3"
 	"io"
 	"strings"
 )
 
 type outputFormatter interface {
 	WriteStringSlice(into io.Writer, data []string) error
+	WriteObject(into io.Writer, obj interface{}) error
 }
 
 type NewlineFormatter struct{}
+
+func (n *NewlineFormatter) WriteObject(into io.Writer, obj interface{}) error {
+	_, err := pp.New().Fprint(into, obj)
+	return err
+}
 
 func (n *NewlineFormatter) WriteStringSlice(into io.Writer, data []string) error {
 	total := strings.Join(data, "\n")
@@ -25,8 +32,14 @@ func (n *NewlineFormatter) WriteStringSlice(into io.Writer, data []string) error
 
 type JSONFormatter struct{}
 
+func (J *JSONFormatter) WriteObject(into io.Writer, obj interface{}) error {
+	enc := json.NewEncoder(into)
+	enc.SetIndent("", "\t")
+	return enc.Encode(obj)
+}
+
 func (J *JSONFormatter) WriteStringSlice(into io.Writer, data []string) error {
-	return json.NewEncoder(into).Encode(data)
+	return J.WriteObject(into, data)
 }
 
 var _ outputFormatter = &NewlineFormatter{}
