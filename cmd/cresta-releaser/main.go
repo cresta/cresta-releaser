@@ -1,7 +1,9 @@
 package main
 
-import "github.com/cresta/cresta-releaser/cmd"
+import (
+	"github.com/cresta/cresta-releaser/cmd/cresta-releaser/commands"
+)
 
 func main() {
-	cmd.Execute()
+	commands.Execute()
 }
