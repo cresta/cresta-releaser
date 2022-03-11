@@ -11,9 +11,15 @@ import (
 type outputFormatter interface {
 	WriteStringSlice(into io.Writer, data []string) error
 	WriteObject(into io.Writer, obj interface{}) error
+	WriteString(stdout io.Writer, text string) error
 }
 
 type NewlineFormatter struct{}
+
+func (n *NewlineFormatter) WriteString(stdout io.Writer, text string) error {
+	_, err := io.WriteString(stdout, text)
+	return err
+}
 
 func (n *NewlineFormatter) WriteObject(into io.Writer, obj interface{}) error {
 	_, err := pp.New().Fprint(into, obj)
@@ -31,6 +37,10 @@ func (n *NewlineFormatter) WriteStringSlice(into io.Writer, data []string) error
 }
 
 type JSONFormatter struct{}
+
+func (J *JSONFormatter) WriteString(stdout io.Writer, text string) error {
+	return J.WriteObject(stdout, text)
+}
 
 func (J *JSONFormatter) WriteObject(into io.Writer, obj interface{}) error {
 	enc := json.NewEncoder(into)

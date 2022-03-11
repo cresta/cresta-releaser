@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/k0kubun/pp/v3 v3.1.0
+	github.com/sergi/go-diff v1.2.0
 	github.com/spf13/cobra v1.3.0
 )
 

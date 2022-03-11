@@ -10,6 +10,10 @@ import (
 type FileSystem interface {
 	DirectoriesInsideDirectory(dir string) ([]string, error)
 	DirectoryExists(dir string) (bool, error)
+	DeleteFile(dir string, name string) error
+	ModifyFileContent(dir string, name string, content string) error
+	CreateFile(dir string, name string, content string, perms os.FileMode) error
+	ChangeFileMode(dir string, name string, perms os.FileMode) error
 	FilesInsideDirectory(dir string) ([]File, error)
 }
 
@@ -20,6 +24,34 @@ type File struct {
 }
 
 type OSFileSystem struct {
+}
+
+func (O *OSFileSystem) DeleteFile(dir string, name string) error {
+	if err := os.Remove(filepath.Join(dir, name)); err != nil {
+		return fmt.Errorf("error deleting file %s: %s", name, err)
+	}
+	return nil
+}
+
+func (O *OSFileSystem) ModifyFileContent(dir string, name string, content string) error {
+	if err := ioutil.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+		return fmt.Errorf("error modifying file %s: %s", name, err)
+	}
+	return nil
+}
+
+func (O *OSFileSystem) CreateFile(dir string, name string, content string, perms os.FileMode) error {
+	if err := ioutil.WriteFile(filepath.Join(dir, name), []byte(content), perms); err != nil {
+		return fmt.Errorf("error creating file %s: %s", name, err)
+	}
+	return nil
+}
+
+func (O *OSFileSystem) ChangeFileMode(dir string, name string, perms os.FileMode) error {
+	if err := os.Chmod(filepath.Join(dir, name), perms); err != nil {
+		return fmt.Errorf("error changing file mode for file %s: %s", name, err)
+	}
+	return nil
 }
 
 func (O *OSFileSystem) FilesInsideDirectory(dir string) ([]File, error) {
