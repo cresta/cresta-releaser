@@ -1,5 +1,3 @@
 hello
 
 dd
-
-another
