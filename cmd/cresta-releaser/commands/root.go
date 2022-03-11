@@ -14,6 +14,11 @@ var rootCmd = &cobra.Command{
 	Use:     "cresta-releaser",
 	Short:   "Help deploy new releases",
 	PreRunE: verifyOutputFormat,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		api, err = releaser.NewFromCommandLine(cmd.Context(), nil)
+		return err
+	},
 }
 
 func Execute() {
@@ -54,5 +59,5 @@ var outputFormat *string
 
 func init() {
 	outputFormat = rootCmd.PersistentFlags().StringP("output", "o", "", "Output format of the command")
-	api = releaser.NewFromCommandLine()
+	//api = releaser.NewFromCommandLine()
 }

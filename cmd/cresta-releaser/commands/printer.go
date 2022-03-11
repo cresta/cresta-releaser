@@ -18,6 +18,13 @@ type NewlineFormatter struct{}
 
 func (n *NewlineFormatter) WriteString(stdout io.Writer, text string) error {
 	_, err := io.WriteString(stdout, text)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(text, "\n") {
+		return nil
+	}
+	_, err = io.WriteString(stdout, "\n")
 	return err
 }
 

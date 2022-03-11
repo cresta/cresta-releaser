@@ -9,8 +9,39 @@ import (
 )
 
 type FromCommandLine struct {
-	fs  FileSystem
-	git Git
+	fs     FileSystem
+	git    Git
+	github GitHub
+}
+
+func (f *FromCommandLine) GithubWhoami(ctx context.Context) (string, error) {
+	return f.github.Self(ctx)
+}
+
+func (f *FromCommandLine) PullRequestCurrent(ctx context.Context) error {
+	owner, repo, err := f.git.GetRemoteAsGithubRepo(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to parse remote URL: %w", err)
+	}
+	info, err := f.github.RepositoryInfo(ctx, owner, repo)
+	if err != nil {
+		return fmt.Errorf("unable to get repository info for %s/%s: %w", owner, repo, err)
+	}
+	if err := f.github.CreatePullRequest(ctx, info.Repository.ID, string(info.Repository.DefaultBranchRef.Name), "master", "master", "Update release notes"); err != nil {
+		return fmt.Errorf("unable to create pull request: %w", err)
+	}
+	return nil
+}
+
+func (f *FromCommandLine) ForcePushCurrentBranch(ctx context.Context) error {
+	currentBranch, err := f.git.CurrentBranchName(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+	if currentBranch == "master" || currentBranch == "main" {
+		return fmt.Errorf("cannot force push master or main branch")
+	}
+	return f.git.ForcePushHead(ctx, "origin", currentBranch)
 }
 
 func (f *FromCommandLine) CommitForRelease(ctx context.Context, application string, release string) error {
@@ -174,11 +205,16 @@ func (f *FromCommandLine) ListApplications() ([]string, error) {
 	return dirs, nil
 }
 
-func NewFromCommandLine() *FromCommandLine {
-	return &FromCommandLine{
-		fs:  &OSFileSystem{},
-		git: &GitCli{},
+func NewFromCommandLine(ctx context.Context, githubCfg *NewGQLClientConfig) (*FromCommandLine, error) {
+	gh, err := NewGQLClient(ctx, githubCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create github client: %w", err)
 	}
+	return &FromCommandLine{
+		fs:     &OSFileSystem{},
+		git:    &GitCli{},
+		github: gh,
+	}, nil
 }
 
 func (f *FromCommandLine) ListReleases(application string) ([]string, error) {
@@ -257,4 +293,11 @@ type Api interface {
 	FreshGitBranch(ctx context.Context, application string, release string, forcedName string) error
 	// CommitForRelease will commit the release to the git branch
 	CommitForRelease(ctx context.Context, application string, release string) error
+	// ForcePushCurrentBranch will force push the current branch to the remote repostiory as a branch with the same name.
+	// Fails on branches master or main.
+	ForcePushCurrentBranch(ctx context.Context) error
+	// PullRequestCurrent creates a pull request for the current branch
+	PullRequestCurrent(ctx context.Context) error
+	// GithubWhoami returns who the CLI thinks you are on github
+	GithubWhoami(ctx context.Context) (string, error)
 }
