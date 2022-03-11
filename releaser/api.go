@@ -2,13 +2,34 @@ package releaser
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 )
 
 type FromCommandLine struct {
-	fs FileSystem
+	fs  FileSystem
+	git Git
+}
+
+func (f *FromCommandLine) CommitForRelease(ctx context.Context, application string, release string) error {
+	msg := fmt.Sprintf("cresta-releaser: %s:%s", application, release)
+	return f.git.CommitAll(ctx, msg)
+}
+
+func (f *FromCommandLine) FreshGitBranch(ctx context.Context, application string, release string, forcedName string) error {
+	if err := f.git.VerifyFresh(ctx); err != nil {
+		return fmt.Errorf("git is not clean: %w", err)
+	}
+	branchName := forcedName
+	if branchName == "" {
+		branchName = fmt.Sprintf("creta-release-%s-%s", application, release)
+	}
+	if err := f.git.CheckoutNewBranch(ctx, branchName); err != nil {
+		return fmt.Errorf("failed to create branch: %w", err)
+	}
+	return nil
 }
 
 func (f *FromCommandLine) ApplyRelease(application string, release string, oldRelease *Release, newRelease *Release) error {
@@ -155,7 +176,8 @@ func (f *FromCommandLine) ListApplications() ([]string, error) {
 
 func NewFromCommandLine() *FromCommandLine {
 	return &FromCommandLine{
-		fs: &OSFileSystem{},
+		fs:  &OSFileSystem{},
+		git: &GitCli{},
 	}
 }
 
@@ -231,4 +253,8 @@ type Api interface {
 	// ApplyRelease will promote a release to be the current version by applying the previously
 	// fetched PreviewRelease
 	ApplyRelease(application string, release string, oldRelease *Release, newRelease *Release) error
+	// FreshGitBranch will create a fresh git branch for releasing
+	FreshGitBranch(ctx context.Context, application string, release string, forcedName string) error
+	// CommitForRelease will commit the release to the git branch
+	CommitForRelease(ctx context.Context, application string, release string) error
 }
