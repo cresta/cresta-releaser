@@ -6,6 +6,7 @@ import (
 	"github.com/bradleyfalzon/ghinstallation"
 	"github.com/shurcooL/githubv4"
 	"github.com/shurcooL/graphql"
+	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
@@ -20,8 +21,16 @@ type GitHub interface {
 	CreatePullRequest(ctx context.Context, remoteRepositoryId graphql.ID, baseRefName string, remoteRefName string, title string, body string) error
 	// RepositoryInfo returns special information about a remote repository
 	RepositoryInfo(ctx context.Context, owner string, name string) (*RepositoryInfo, error)
+	// FindPRForBranch returns the PR for this branch
+	FindPRForBranch(ctx context.Context, owner string, name string, branch string) (int64, error)
 	// Self returns the current user
 	Self(ctx context.Context) (string, error)
+	// AcceptPullRequest approves a PR
+	AcceptPullRequest(ctx context.Context, approvalmessage string, owner string, name string, number int64) error
+	// MergePullRequest merges in a PR and closes it, but only if it's approved
+	MergePullRequest(ctx context.Context, owner string, name string, number int64) error
+	// FindPullRequestOid returns the OID of the PR
+	FindPullRequestOid(ctx context.Context, owner string, name string, number int64) (githubv4.ID, error)
 }
 
 type RepositoryInfo struct {
@@ -43,6 +52,116 @@ type createPullRequest struct {
 
 type GithubGraphqlAPI struct {
 	ClientV4 *githubv4.Client
+	Logger   *zap.Logger
+}
+
+func (g *GithubGraphqlAPI) FindPullRequestOid(ctx context.Context, owner string, name string, number int64) (githubv4.ID, error) {
+	g.Logger.Debug("FindPullRequestOid", zap.String("owner", owner), zap.String("name", name), zap.Int64("number", number))
+	defer g.Logger.Debug("Done FindPullRequestOid")
+	var query struct {
+		Repository struct {
+			PullRequest struct {
+				ID githubv4.ID
+			} `graphql:"pullRequest(number: $number)"`
+		} `graphql:"repository(owner: $owner, name: $name)"`
+	}
+	variables := map[string]interface{}{
+		"owner":  githubv4.String(owner),
+		"name":   githubv4.String(name),
+		"number": githubv4.Int(number),
+	}
+	err := g.ClientV4.Query(ctx, &query, variables)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query for PRs: %w", err)
+	}
+	if query.Repository.PullRequest.ID == 0 {
+		return 0, fmt.Errorf("failed to find PR %d", number)
+	}
+	return query.Repository.PullRequest.ID, nil
+}
+
+func (g *GithubGraphqlAPI) AcceptPullRequest(ctx context.Context, approvalmessage string, owner string, name string, number int64) error {
+	prid, err := g.FindPullRequestOid(ctx, owner, name, number)
+	if err != nil {
+		return fmt.Errorf("failed to find PR: %w", err)
+	}
+	g.Logger.Debug("AcceptPullRequest", zap.String("owner", owner), zap.String("name", name), zap.Int64("number", number), zap.Any("prid", prid))
+	defer g.Logger.Debug("Done AcceptPullRequest")
+	event := githubv4.PullRequestReviewEventApprove
+	body := githubv4.String(approvalmessage)
+	var ret struct {
+		AddPullRequestReview struct {
+			PullRequestReview struct {
+				ID githubv4.ID
+			}
+		} `graphql:"addPullRequestReview(input: $input)"`
+	}
+	if err := g.ClientV4.Mutate(ctx, &ret, githubv4.AddPullRequestReviewInput{
+		PullRequestID: prid,
+		Body:          &body,
+		Event:         &event,
+	}, nil); err != nil {
+		return fmt.Errorf("uanble to add PR review: %w", err)
+	}
+	return nil
+}
+
+func (g *GithubGraphqlAPI) MergePullRequest(ctx context.Context, owner string, name string, number int64) error {
+	prid, err := g.FindPullRequestOid(ctx, owner, name, number)
+	if err != nil {
+		return fmt.Errorf("failed to find PR: %w", err)
+	}
+	g.Logger.Debug("MergePullRequest", zap.String("owner", owner), zap.String("name", name), zap.Int64("number", number), zap.Any("prid", prid))
+	defer g.Logger.Debug("Done MergePullRequest")
+	var ret struct {
+		MergePullRequest struct {
+			PullRequest struct {
+				ID githubv4.ID
+			}
+		} `graphql:"mergePullRequest(input: $input)"`
+	}
+	mergeMethod := githubv4.PullRequestMergeMethodSquash
+	if err := g.ClientV4.Mutate(ctx, &ret, githubv4.MergePullRequestInput{
+		PullRequestID: prid,
+		MergeMethod:   &mergeMethod,
+	}, nil); err != nil {
+		return fmt.Errorf("uanble to add PR review: %w", err)
+	}
+	return nil
+}
+
+type GraphQLPRQueryNode struct {
+	Number githubv4.Int
+}
+
+func (g *GithubGraphqlAPI) FindPRForBranch(ctx context.Context, owner string, name string, branch string) (int64, error) {
+	g.Logger.Debug("FindPRForBranch", zap.String("owner", owner), zap.String("name", name), zap.String("branch", branch))
+	defer g.Logger.Debug("Done FindPRForBranch")
+	var query struct {
+		Repository struct {
+			PullRequests struct {
+				Nodes []GraphQLPRQueryNode `graphql:"nodes"`
+			} `graphql:"pullRequests(states: [OPEN], first: 10, headRefName: $branch)"`
+		} `graphql:"repository(owner: $owner, name: $name)"`
+	}
+	variables := map[string]interface{}{
+		"owner":  githubv4.String(owner),
+		"name":   githubv4.String(name),
+		"branch": githubv4.String(branch),
+	}
+	err := g.ClientV4.Query(ctx, &query, variables)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query for PRs: %w", err)
+	}
+	if len(query.Repository.PullRequests.Nodes) == 0 {
+		g.Logger.Debug("No PRs found")
+		return 0, nil
+	}
+	if len(query.Repository.PullRequests.Nodes) > 1 {
+		return 0, fmt.Errorf("found multiple PRs for branch %s", branch)
+	}
+	pr := query.Repository.PullRequests.Nodes[0]
+	return int64(pr.Number), nil
 }
 
 type NewGQLClientConfig struct {
@@ -53,18 +172,20 @@ type NewGQLClientConfig struct {
 	Token          string
 }
 
-func clientFromToken(_ context.Context, token string) (GitHub, error) {
+func clientFromToken(_ context.Context, logger *zap.Logger, token string) (GitHub, error) {
 	src := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)
 	httpClient := oauth2.NewClient(context.Background(), src)
+	httpClient.Transport = DebugLogTransport(httpClient.Transport, logger)
 	gql := githubv4.NewClient(httpClient)
 	return &GithubGraphqlAPI{
 		ClientV4: gql,
+		Logger:   logger,
 	}, nil
 }
 
-func clientFromPEM(ctx context.Context, baseRoundTripper http.RoundTripper, appID int64, installID int64, pemLoc string) (GitHub, error) {
+func clientFromPEM(ctx context.Context, logger *zap.Logger, baseRoundTripper http.RoundTripper, appID int64, installID int64, pemLoc string) (GitHub, error) {
 	if baseRoundTripper == nil {
 		baseRoundTripper = http.DefaultTransport
 	}
@@ -76,9 +197,10 @@ func clientFromPEM(ctx context.Context, baseRoundTripper http.RoundTripper, appI
 	if err != nil {
 		return nil, fmt.Errorf("unable to validate token: %w", err)
 	}
-	gql := githubv4.NewClient(&http.Client{Transport: trans})
+	gql := githubv4.NewClient(&http.Client{Transport: DebugLogTransport(trans, logger)})
 	return &GithubGraphqlAPI{
 		ClientV4: gql,
+		Logger:   logger,
 	}, nil
 }
 
@@ -106,23 +228,25 @@ type configFileAuths struct {
 	Token string `yaml:"oauth_token"`
 }
 
-func NewGQLClient(ctx context.Context, cfg *NewGQLClientConfig) (GitHub, error) {
+func NewGQLClient(ctx context.Context, logger *zap.Logger, cfg *NewGQLClientConfig) (GitHub, error) {
 	if cfg != nil && cfg.Token != "" {
-		return clientFromToken(ctx, cfg.Token)
+		return clientFromToken(ctx, logger, cfg.Token)
 	}
 	if cfg != nil && cfg.PEMKeyLoc != "" {
-		return clientFromPEM(ctx, cfg.Rt, cfg.AppID, cfg.InstallationID, cfg.PEMKeyLoc)
+		return clientFromPEM(ctx, logger, cfg.Rt, cfg.AppID, cfg.InstallationID, cfg.PEMKeyLoc)
 	}
 	if os.Getenv("GITHUB_TOKEN") != "" {
-		return clientFromToken(ctx, os.Getenv("GITHUB_TOKEN"))
+		return clientFromToken(ctx, logger, os.Getenv("GITHUB_TOKEN"))
 	}
 	if token := tokenFromGithubCLI(); token != "" {
-		return clientFromToken(ctx, token)
+		return clientFromToken(ctx, logger, token)
 	}
 	return nil, fmt.Errorf("no token provided")
 }
 
 func (g *GithubGraphqlAPI) Self(ctx context.Context) (string, error) {
+	g.Logger.Debug("fetcing self")
+	defer g.Logger.Debug("done fetching self")
 	var q struct {
 		Viewer struct {
 			Login githubv4.String
@@ -136,6 +260,8 @@ func (g *GithubGraphqlAPI) Self(ctx context.Context) (string, error) {
 }
 
 func (g *GithubGraphqlAPI) CreatePullRequest(ctx context.Context, remoteRepositoryId graphql.ID, baseRefName string, remoteRefName string, title string, body string) error {
+	g.Logger.Debug("creating pull request", zap.Any("remoteRepositoryId", remoteRepositoryId), zap.String("baseRefName", baseRefName), zap.String("remoteRefName", remoteRefName), zap.String("title", title), zap.String("body", body))
+	defer g.Logger.Debug("done creating pull request")
 	var ret createPullRequest
 	if err := g.ClientV4.Mutate(ctx, &ret, githubv4.CreatePullRequestInput{
 		RepositoryID: remoteRepositoryId,
@@ -150,6 +276,8 @@ func (g *GithubGraphqlAPI) CreatePullRequest(ctx context.Context, remoteReposito
 }
 
 func (g *GithubGraphqlAPI) RepositoryInfo(ctx context.Context, owner string, name string) (*RepositoryInfo, error) {
+	g.Logger.Debug("fetching repository info", zap.String("owner", owner), zap.String("name", name))
+	defer g.Logger.Debug("done fetching repository info")
 	var repoInfo RepositoryInfo
 	if err := g.ClientV4.Query(ctx, &repoInfo, map[string]interface{}{
 		"owner": githubv4.String(owner),

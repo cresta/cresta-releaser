@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/cresta/cresta-releaser/releaser"
+	"go.uber.org/zap"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -16,7 +17,16 @@ var rootCmd = &cobra.Command{
 	PreRunE: verifyOutputFormat,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		var err error
-		api, err = releaser.NewFromCommandLine(cmd.Context(), nil)
+		cfg := zap.NewProductionConfig()
+		cfg.Encoding = "console"
+		if *verbose {
+			cfg.Level.SetLevel(zap.DebugLevel)
+		}
+		logger, err := cfg.Build()
+		if err != nil {
+			return err
+		}
+		api, err = releaser.NewFromCommandLine(cmd.Context(), logger, nil)
 		return err
 	},
 }
@@ -56,8 +66,9 @@ func getOutputFormat() outputFormatter {
 }
 
 var outputFormat *string
+var verbose *bool
 
 func init() {
 	outputFormat = rootCmd.PersistentFlags().StringP("output", "o", "", "Output format of the command")
-	//api = releaser.NewFromCommandLine()
+	verbose = rootCmd.PersistentFlags().BoolP("verbose", "v", false, "If true, will print out verbose logging")
 }

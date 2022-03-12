@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go.uber.org/zap"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -14,11 +16,53 @@ type FromCommandLine struct {
 	github GitHub
 }
 
+func (f *FromCommandLine) MergePullRequestForCurrentRemote(ctx context.Context, prNumber int64) error {
+	owner, repo, err := f.git.GetRemoteAsGithubRepo(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get remote as github repo: %w", err)
+	}
+	return f.github.MergePullRequest(ctx, owner, repo, prNumber)
+}
+
+func (f *FromCommandLine) ApprovePullRequestForCurrentRemote(ctx context.Context, approvalMessage string, prNumber int64) error {
+	owner, repo, err := f.git.GetRemoteAsGithubRepo(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get remote as github repo: %w", err)
+	}
+	if approvalMessage == "" {
+		approvalMessage = "Approved by cresta-releaser"
+	}
+	return f.github.AcceptPullRequest(ctx, approvalMessage, owner, repo, prNumber)
+}
+
+func (f *FromCommandLine) CheckForPROnCurrentBranch(ctx context.Context) (int64, error) {
+	branch, err := f.git.CurrentBranchName(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	owner, repo, err := f.git.GetRemoteAsGithubRepo(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get remote as github repo: %w", err)
+	}
+
+	pr, err := f.github.FindPRForBranch(ctx, owner, repo, branch)
+	if err != nil {
+		return 0, fmt.Errorf("failed to find pr for branch: %w", err)
+	}
+
+	return pr, nil
+}
+
 func (f *FromCommandLine) GithubWhoami(ctx context.Context) (string, error) {
 	return f.github.Self(ctx)
 }
 
 func (f *FromCommandLine) PullRequestCurrent(ctx context.Context) error {
+	currentBranch, err := f.git.CurrentBranchName(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
 	owner, repo, err := f.git.GetRemoteAsGithubRepo(ctx)
 	if err != nil {
 		return fmt.Errorf("unable to parse remote URL: %w", err)
@@ -27,7 +71,7 @@ func (f *FromCommandLine) PullRequestCurrent(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to get repository info for %s/%s: %w", owner, repo, err)
 	}
-	if err := f.github.CreatePullRequest(ctx, info.Repository.ID, string(info.Repository.DefaultBranchRef.Name), "master", "master", "Update release notes"); err != nil {
+	if err := f.github.CreatePullRequest(ctx, info.Repository.ID, string(info.Repository.DefaultBranchRef.Name), currentBranch, "master", "Update release notes"); err != nil {
 		return fmt.Errorf("unable to create pull request: %w", err)
 	}
 	return nil
@@ -120,12 +164,41 @@ func (f *FromCommandLine) PreviewRelease(application string, release string) (ol
 	return thisRelease, nextRelease, nil
 }
 
+func filterReleaseOutput(filename string, output string, oldReleaseName string, newReleaseName string) string {
+	ret := strings.ReplaceAll(output, oldReleaseName, newReleaseName)
+	ret = replaceAutoPromoteTags(filename, output)
+	return ret
+}
+
+var autoPromoteFilter = regexp.MustCompile(`(.*) # filter-auto-promote .*$`)
+
+func replaceAutoPromoteTags(filename string, output string) string {
+	if !strings.HasSuffix(filename, ".yaml") && !strings.HasSuffix(filename, ".yml") {
+		return output
+	}
+	lines := strings.Split(output, "\n")
+	newLines := make([]string, 0, len(lines))
+	hasMatch := false
+	for _, line := range lines {
+		if autoPromoteFilter.MatchString(line) {
+			hasMatch = true
+			newLines = append(newLines, autoPromoteFilter.ReplaceAllString(line, "$1"))
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+	if hasMatch {
+		return strings.Join(newLines, "\n")
+	}
+	return output
+}
+
 func describeNewRelease(promoteFrom *Release, previousName string, newName string) *Release {
 	ret := &Release{}
 	for _, f := range promoteFrom.Files {
 		ret.Files = append(ret.Files, ReleaseFile{
 			Name:    f.Name,
-			Content: strings.ReplaceAll(f.Content, previousName, newName),
+			Content: filterReleaseOutput(f.Name, f.Content, previousName, newName),
 		})
 	}
 	return ret
@@ -205,14 +278,16 @@ func (f *FromCommandLine) ListApplications() ([]string, error) {
 	return dirs, nil
 }
 
-func NewFromCommandLine(ctx context.Context, githubCfg *NewGQLClientConfig) (*FromCommandLine, error) {
-	gh, err := NewGQLClient(ctx, githubCfg)
+func NewFromCommandLine(ctx context.Context, logger *zap.Logger, githubCfg *NewGQLClientConfig) (*FromCommandLine, error) {
+	gh, err := NewGQLClient(ctx, logger, githubCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create github client: %w", err)
 	}
 	return &FromCommandLine{
-		fs:     &OSFileSystem{},
-		git:    &GitCli{},
+		fs: &OSFileSystem{},
+		git: &GitCli{
+			Logger: logger,
+		},
 		github: gh,
 	}, nil
 }
@@ -298,6 +373,12 @@ type Api interface {
 	ForcePushCurrentBranch(ctx context.Context) error
 	// PullRequestCurrent creates a pull request for the current branch
 	PullRequestCurrent(ctx context.Context) error
+	// CheckForPROnCurrentBranch will check if there is a pull request on the current branch
+	CheckForPROnCurrentBranch(ctx context.Context) (int64, error)
 	// GithubWhoami returns who the CLI thinks you are on github
 	GithubWhoami(ctx context.Context) (string, error)
+	// ApprovePullRequestForCurrentRemote will approve the pull request on the current remote
+	ApprovePullRequestForCurrentRemote(ctx context.Context, approvalMessage string, prNumber int64) error
+	// MergePullRequestForCurrentRemote will merge an approved PR
+	MergePullRequestForCurrentRemote(ctx context.Context, prNumber int64) error
 }

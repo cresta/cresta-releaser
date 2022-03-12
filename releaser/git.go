@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/cresta/magehelper/pipe"
+	"go.uber.org/zap"
 	"strings"
 )
 
@@ -18,17 +19,29 @@ type Git interface {
 }
 
 type GitCli struct {
+	Logger *zap.Logger
+}
+
+func (g *GitCli) runAndLogOutput(ctx context.Context, cmd *pipe.PipedCmd) (bytes.Buffer, bytes.Buffer, error) {
+	g.Logger.Debug("starting to run command")
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute(ctx, nil, &stdout, &stderr)
+	g.Logger.Debug("ran command", zap.String("stdout", stdout.String()), zap.String("stderr", stderr.String()))
+	return stdout, stderr, err
 }
 
 func (g *GitCli) GetRemoteAsGithubRepo(ctx context.Context) (string, string, error) {
+	g.Logger.Debug("GetRemoteAsGithubRepo")
+	defer g.Logger.Debug("GetRemoteAsGithubRepo done")
 	var stdout, stderr bytes.Buffer
-	if err := pipe.NewPiped("git", "remote", "get-url", "origin").Execute(ctx, nil, &stdout, &stderr); err != nil {
+	stdout, stderr, err := g.runAndLogOutput(ctx, pipe.NewPiped("git", "remote", "get-url", "origin"))
+	if err != nil {
 		return "", "", fmt.Errorf("failed to get remote URL %s: %s", stderr.String(), err)
 	}
 	// Will either look like
 	// * https://github.com/cresta/cresta-releaser.git
 	// * git@github.com:cresta/cresta-releaser.git
-	remote := stdout.String()
+	remote := strings.TrimSpace(stdout.String())
 	remote = strings.TrimPrefix(remote, "https://github.com/")
 	remote = strings.TrimPrefix(remote, "git@github.com:")
 	remote = strings.TrimSuffix(remote, ".git")
@@ -40,14 +53,15 @@ func (g *GitCli) GetRemoteAsGithubRepo(ctx context.Context) (string, string, err
 }
 
 func (g *GitCli) CurrentBranchName(ctx context.Context) (string, error) {
-	var stdout, stderr bytes.Buffer
-	if err := pipe.Shell("git rev-parse --abbrev-ref HEAD").Execute(ctx, nil, &stdout, &stderr); err != nil {
+	var stdout bytes.Buffer
+	stdout, _, err := g.runAndLogOutput(ctx, pipe.Shell("git rev-parse --abbrev-ref HEAD"))
+	if err != nil {
 		return "", fmt.Errorf("failed to get current branch name: %w", err)
 	}
 	if stdout.String() == "" {
 		return "", fmt.Errorf("got an empty branch name")
 	}
-	return stdout.String(), nil
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 func (g *GitCli) ForcePushHead(ctx context.Context, repository string, ref string) error {
@@ -83,7 +97,7 @@ func (g *GitCli) CommitAll(ctx context.Context, message string) error {
 
 func (g *GitCli) CheckoutNewBranch(ctx context.Context, branch string) error {
 	var stdout, stderr bytes.Buffer
-	err := pipe.NewPiped("git", "checkout", "-b", branch).Execute(ctx, nil, &stdout, &stderr)
+	err := pipe.NewPiped("git", "checkout", "-b", branch, "origin/master").Execute(ctx, nil, &stdout, &stderr)
 	if err != nil {
 		return fmt.Errorf("git checkout failed: %w", err)
 	}
