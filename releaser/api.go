@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -148,6 +149,15 @@ func (f *FromCommandLine) isReleaseSymlink(application string, release string) b
 	return fi.Mode()&os.ModeSymlink == os.ModeSymlink
 }
 
+type searchReplace struct {
+	Search  string `yaml:"search"`
+	Replace string `yaml:"replace"`
+}
+
+type ReleaseConfig struct {
+	searchReplace []searchReplace `yaml:"searchReplace"`
+}
+
 func (f *FromCommandLine) PreviewRelease(application string, release string) (oldRelease *Release, newRelease *Release, err error) {
 	releases, err := f.ListReleases(application)
 	if err != nil {
@@ -175,13 +185,27 @@ func (f *FromCommandLine) PreviewRelease(application string, release string) (ol
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to get previous release %s: %w", previousReleaseName, err)
 	}
-	nextRelease := describeNewRelease(prevRelease, previousReleaseName, release)
+	nextRelease, err := describeNewRelease(prevRelease, previousReleaseName, release)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to describe new release: %w", err)
+	}
 	return thisRelease, nextRelease, nil
 }
 
-func filterReleaseOutput(filename string, output string, oldReleaseName string, newReleaseName string) string {
+func filterReleaseOutput(filename string, output string, oldReleaseName string, newReleaseName string, r *ReleaseConfig) string {
 	ret := strings.ReplaceAll(output, oldReleaseName, newReleaseName)
 	ret = replaceAutoPromoteTags(filename, ret)
+	ret = processReleaseConfig(r, ret)
+	return ret
+}
+
+func processReleaseConfig(r *ReleaseConfig, ret string) string {
+	if r == nil {
+		return ret
+	}
+	for _, sr := range r.searchReplace {
+		ret = strings.ReplaceAll(ret, sr.Search, sr.Replace)
+	}
 	return ret
 }
 
@@ -208,15 +232,21 @@ func replaceAutoPromoteTags(filename string, output string) string {
 	return output
 }
 
-func describeNewRelease(promoteFrom *Release, previousName string, newName string) *Release {
+func describeNewRelease(promoteFrom *Release, previousName string, newName string) (*Release, error) {
+	var releaseConfig ReleaseConfig
+	if configFile, exists := promoteFrom.FilesByName()[".releaser.yaml"]; exists {
+		if err := yaml.Unmarshal([]byte(configFile.Content), &releaseConfig); err != nil {
+			return nil, fmt.Errorf("unable to parse .releaser.yaml: %w", err)
+		}
+	}
 	ret := &Release{}
 	for _, f := range promoteFrom.Files {
 		ret.Files = append(ret.Files, ReleaseFile{
 			Name:    f.Name,
-			Content: filterReleaseOutput(f.Name, f.Content, previousName, newName),
+			Content: filterReleaseOutput(f.Name, f.Content, previousName, newName, &releaseConfig),
 		})
 	}
-	return ret
+	return ret, nil
 }
 
 func indexOf(s string, in []string) int {
