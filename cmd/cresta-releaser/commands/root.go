@@ -63,7 +63,6 @@ func getOutputFormat() outputFormatter {
 	default:
 		panic("Invalid formatter")
 	}
-	return nil
 }
 
 var outputFormat *string

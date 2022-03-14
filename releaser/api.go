@@ -181,7 +181,7 @@ func (f *FromCommandLine) PreviewRelease(application string, release string) (ol
 
 func filterReleaseOutput(filename string, output string, oldReleaseName string, newReleaseName string) string {
 	ret := strings.ReplaceAll(output, oldReleaseName, newReleaseName)
-	ret = replaceAutoPromoteTags(filename, output)
+	ret = replaceAutoPromoteTags(filename, ret)
 	return ret
 }
 
