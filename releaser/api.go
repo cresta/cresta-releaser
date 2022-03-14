@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"go.uber.org/zap"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -137,6 +138,15 @@ func (f *FromCommandLine) ApplyRelease(application string, release string, oldRe
 	return nil
 }
 
+func (f *FromCommandLine) isReleaseSymlink(application string, release string) bool {
+	releaseDirectory := filepath.Join("apps", application, "releases", release)
+	fi, err := os.Stat(releaseDirectory)
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeSymlink == os.ModeSymlink
+}
+
 func (f *FromCommandLine) PreviewRelease(application string, release string) (oldRelease *Release, newRelease *Release, err error) {
 	releases, err := f.ListReleases(application)
 	if err != nil {
@@ -153,6 +163,10 @@ func (f *FromCommandLine) PreviewRelease(application string, release string) (ol
 	thisRelease, err := f.GetRelease(application, release)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to get release %s: %w", release, err)
+	}
+	// If this release is a symlink, then we never substitue during a promotion
+	if f.isReleaseSymlink(application, release) {
+		return thisRelease, thisRelease, nil
 	}
 
 	previousReleaseName := releases[thisReleaseIndex-1]
