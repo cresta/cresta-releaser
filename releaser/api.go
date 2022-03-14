@@ -13,6 +13,8 @@ import (
 	"go.uber.org/zap"
 )
 
+// FromCommandLine will process our API using command line execution. It assumes you have things like `git` already
+// installed.
 type FromCommandLine struct {
 	fs     FileSystem
 	git    Git
@@ -155,7 +157,7 @@ type searchReplace struct {
 }
 
 type ReleaseConfig struct {
-	searchReplace []searchReplace `yaml:"searchReplace"`
+	SearchReplace []searchReplace `yaml:"searchReplace"`
 }
 
 func (f *FromCommandLine) PreviewRelease(application string, release string) (oldRelease *Release, newRelease *Release, err error) {
@@ -175,7 +177,7 @@ func (f *FromCommandLine) PreviewRelease(application string, release string) (ol
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to get release %s: %w", release, err)
 	}
-	// If this release is a symlink, then we never substitue during a promotion
+	// If this release is a symlink, then we never promote
 	if f.isReleaseSymlink(application, release) {
 		return thisRelease, thisRelease, nil
 	}
@@ -203,7 +205,7 @@ func processReleaseConfig(r *ReleaseConfig, ret string) string {
 	if r == nil {
 		return ret
 	}
-	for _, sr := range r.searchReplace {
+	for _, sr := range r.SearchReplace {
 		ret = strings.ReplaceAll(ret, sr.Search, sr.Replace)
 	}
 	return ret
@@ -368,7 +370,9 @@ func (f *FromCommandLine) ListReleases(application string) ([]string, error) {
 
 var _ Api = &FromCommandLine{}
 
+// A Release is a collection of files that we intend to change in git
 type Release struct {
+	// Files is each released file
 	Files []ReleaseFile
 }
 
@@ -393,10 +397,13 @@ func (r *Release) FilesByName() map[string]ReleaseFile {
 }
 
 type ReleaseFile struct {
-	Name    string
+	// Name of the file (filename)
+	Name string
+	// Content of the file
 	Content string
 }
 
+// Api is an interface into our release process.
 type Api interface {
 	// ListReleases will list all releases for an application
 	ListReleases(application string) ([]string, error)
@@ -404,21 +411,24 @@ type Api interface {
 	ListApplications() ([]string, error)
 	// GetRelease will get a release for an application
 	GetRelease(application string, release string) (*Release, error)
-	// PreviewRelease will show what a new release will look like, promoting from the previous version
+	// PreviewRelease will show what a new release will look like, promoting from the previous version.  It returns the
+	// old release and the new release.
 	PreviewRelease(application string, release string) (*Release, *Release, error)
 	// ApplyRelease will promote a release to be the current version by applying the previously
 	// fetched PreviewRelease
 	ApplyRelease(application string, release string, oldRelease *Release, newRelease *Release) error
-	// FreshGitBranch will create a fresh git branch for releasing
+	// FreshGitBranch will create a fresh git branch for releasing.  The name of the branch will somewhat match the
+	// release + application name.
 	FreshGitBranch(ctx context.Context, application string, release string, forcedName string) error
-	// CommitForRelease will commit the release to the git branch
+	// CommitForRelease will commit the release to the git branch.  It assumes you've already called ApplyRelease
 	CommitForRelease(ctx context.Context, application string, release string) error
-	// ForcePushCurrentBranch will force push the current branch to the remote repostiory as a branch with the same name.
+	// ForcePushCurrentBranch will force push the current branch to the remote repository as a branch with the same name.
 	// Fails on branches master or main.
 	ForcePushCurrentBranch(ctx context.Context) error
 	// PullRequestCurrent creates a pull request for the current branch
 	PullRequestCurrent(ctx context.Context) error
-	// CheckForPROnCurrentBranch will check if there is a pull request on the current branch
+	// CheckForPROnCurrentBranch will check if there is a pull request on the current branch.  Returns 0 if there is no
+	// PR, otherwise the PR number
 	CheckForPROnCurrentBranch(ctx context.Context) (int64, error)
 	// GithubWhoami returns who the CLI thinks you are on github
 	GithubWhoami(ctx context.Context) (string, error)
