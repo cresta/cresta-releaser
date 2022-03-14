@@ -1,9 +1,10 @@
 package commands
 
 import (
+	"os"
+
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/spf13/cobra"
-	"os"
 )
 
 var releaseDiffCmd = &cobra.Command{

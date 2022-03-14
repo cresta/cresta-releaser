@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/cresta/magehelper/pipe"
 	"go.uber.org/zap"
-	"strings"
 )
 
 type Git interface {

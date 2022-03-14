@@ -3,10 +3,11 @@ package releaser
 import (
 	"bytes"
 	"fmt"
-	"go.uber.org/zap"
 	"io"
 	"io/ioutil"
 	"net/http"
+
+	"go.uber.org/zap"
 )
 
 type Zaptransport struct {

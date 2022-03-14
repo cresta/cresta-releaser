@@ -3,9 +3,10 @@ package commands
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/cresta/cresta-releaser/releaser"
 	"go.uber.org/zap"
-	"os"
 
 	"github.com/spf13/cobra"
 )

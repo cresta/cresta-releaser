@@ -3,9 +3,10 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/k0kubun/pp/v3"
 	"io"
 	"strings"
+
+	"github.com/k0kubun/pp/v3"
 )
 
 type outputFormatter interface {

@@ -3,16 +3,17 @@ package releaser
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"path/filepath"
+
 	"github.com/bradleyfalzon/ghinstallation"
 	"github.com/shurcooL/githubv4"
 	"github.com/shurcooL/graphql"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
-	"io/ioutil"
-	"net/http"
-	"os"
-	"path/filepath"
 )
 
 type GitHub interface {

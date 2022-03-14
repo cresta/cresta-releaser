@@ -1,8 +1,9 @@
 package commands
 
 import (
-	"github.com/spf13/cobra"
 	"os"
+
+	"github.com/spf13/cobra"
 )
 
 var githubSelfCmd = &cobra.Command{

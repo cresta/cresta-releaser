@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"go.uber.org/zap"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 type FromCommandLine struct {
