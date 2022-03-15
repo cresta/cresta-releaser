@@ -9,7 +9,7 @@ import (
 	"github.com/k0kubun/pp/v3"
 )
 
-type outputFormatter interface {
+type OutputFormatter interface {
 	WriteStringSlice(into io.Writer, data []string) error
 	WriteObject(into io.Writer, obj interface{}) error
 	WriteString(stdout io.Writer, text string) error
@@ -60,5 +60,5 @@ func (J *JSONFormatter) WriteStringSlice(into io.Writer, data []string) error {
 	return J.WriteObject(into, data)
 }
 
-var _ outputFormatter = &NewlineFormatter{}
-var _ outputFormatter = &JSONFormatter{}
+var _ OutputFormatter = &NewlineFormatter{}
+var _ OutputFormatter = &JSONFormatter{}

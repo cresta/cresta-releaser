@@ -49,7 +49,7 @@ func verifyOutputFormat(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func getOutputFormat() outputFormatter {
+func getOutputFormat() OutputFormatter {
 	if outputFormat == nil {
 		return nil
 	}
