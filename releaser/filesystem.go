@@ -11,6 +11,7 @@ import (
 type FileSystem interface {
 	DirectoriesInsideDirectory(dir string) ([]string, error)
 	DirectoryExists(dir string) (bool, error)
+	CreateDirectory(dir string) error
 	DeleteFile(dir string, name string) error
 	ModifyFileContent(dir string, name string, content string) error
 	CreateFile(dir string, name string, content string, perms os.FileMode) error
@@ -41,13 +42,28 @@ func FilesAtRoot(fs FileSystem, dir string) ([]File, error) {
 }
 
 type File struct {
-	Name    string
-	Content string
-	Mode    os.FileMode
+	RelativePath string
+	Name         string
+	Content      string
+	Mode         os.FileMode
 }
 
 type OSFileSystem struct {
 	Logger *zap.Logger
+}
+
+func (O *OSFileSystem) CreateDirectory(dir string) error {
+	exists, err := O.DirectoryExists(dir)
+	if err != nil {
+		return fmt.Errorf("error checking if directory %s exists: %w", dir, err)
+	}
+	if exists {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("error creating directory %s: %w", dir, err)
+	}
+	return nil
 }
 
 func (O *OSFileSystem) DeleteFile(dir string, name string) error {
@@ -109,9 +125,10 @@ func (O *OSFileSystem) FilesInsideDirectory(dir string) ([]File, error) {
 			return nil, fmt.Errorf("error reading file %s: %s", ent.Name(), err)
 		}
 		ret = append(ret, File{
-			Name:    ent.Name(),
-			Content: string(b),
-			Mode:    fi.Mode(),
+			RelativePath: dir,
+			Name:         ent.Name(),
+			Content:      string(b),
+			Mode:         fi.Mode(),
 		})
 	}
 	return ret, nil

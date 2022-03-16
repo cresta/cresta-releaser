@@ -119,13 +119,13 @@ func (f *FromCommandLine) ApplyRelease(application string, release string, oldRe
 	for fileName, file := range oldFiles {
 		newContent, exists := newFiles[fileName]
 		if !exists {
-			if err := f.fs.DeleteFile(releaseDirectory, fileName); err != nil {
+			if err := f.fs.DeleteFile(filepath.Join(releaseDirectory, file.Directory), fileName); err != nil {
 				return fmt.Errorf("error deleting file %s: %s", fileName, err)
 			}
 			continue
 		}
 		if file.Content != newContent.Content {
-			if err := f.fs.ModifyFileContent(releaseDirectory, fileName, newContent.Content); err != nil {
+			if err := f.fs.ModifyFileContent(filepath.Join(releaseDirectory, file.Directory), fileName, newContent.Content); err != nil {
 				return fmt.Errorf("error modifying file %s: %s", fileName, err)
 			}
 		}
@@ -135,8 +135,11 @@ func (f *FromCommandLine) ApplyRelease(application string, release string, oldRe
 		if exists {
 			continue
 		}
-		if err := f.fs.CreateFile(releaseDirectory, fileName, file.Content, 0744); err != nil {
-			return fmt.Errorf("error deleting file %s: %s", fileName, err)
+		if err := f.fs.CreateDirectory(filepath.Join(releaseDirectory, file.Directory)); err != nil {
+			return fmt.Errorf("error creating directory %s: %s", file.Directory, err)
+		}
+		if err := f.fs.CreateFile(filepath.Join(releaseDirectory, file.Directory), fileName, file.Content, 0744); err != nil {
+			return fmt.Errorf("error creating file %s: %s", fileName, err)
 		}
 	}
 	return nil
@@ -244,8 +247,9 @@ func describeNewRelease(promoteFrom *Release, previousName string, newName strin
 	ret := &Release{}
 	for _, f := range promoteFrom.Files {
 		ret.Files = append(ret.Files, ReleaseFile{
-			Name:    f.Name,
-			Content: filterReleaseOutput(f.Name, f.Content, previousName, newName, &releaseConfig),
+			Name:      f.Name,
+			Content:   filterReleaseOutput(f.Name, f.Content, previousName, newName, &releaseConfig),
+			Directory: f.Directory,
 		})
 	}
 	return ret, nil
@@ -302,9 +306,14 @@ func (f *FromCommandLine) releaseInPath(path string) (*Release, error) {
 	}
 	releaseFiles := make([]ReleaseFile, 0)
 	for _, f := range files {
+		relPath, err := filepath.Rel(path, f.RelativePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get relative path for file %s: %w", f.RelativePath, err)
+		}
 		releaseFiles = append(releaseFiles, ReleaseFile{
-			Name:    f.Name,
-			Content: f.Content,
+			Name:      f.Name,
+			Content:   f.Content,
+			Directory: relPath,
 		})
 	}
 	return &Release{Files: releaseFiles}, nil
@@ -401,6 +410,8 @@ func (r *Release) FilesByName() map[string]ReleaseFile {
 type ReleaseFile struct {
 	// Name of the file (filename)
 	Name string
+	// Relative path to the file
+	Directory string
 	// Content of the file
 	Content string
 }
