@@ -331,7 +331,9 @@ func NewFromCommandLine(ctx context.Context, logger *zap.Logger, githubCfg *NewG
 		return nil, fmt.Errorf("failed to create github client: %w", err)
 	}
 	return &FromCommandLine{
-		fs: &OSFileSystem{},
+		fs: &OSFileSystem{
+			Logger: logger,
+		},
 		git: &GitCli{
 			Logger: logger,
 		},

@@ -2,6 +2,7 @@ package releaser
 
 import (
 	"fmt"
+	"go.uber.org/zap"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -36,7 +37,7 @@ func FilesAtRoot(fs FileSystem, dir string) ([]File, error) {
 		ret = append(ret, files...)
 	}
 
-	return files, nil
+	return ret, nil
 }
 
 type File struct {
@@ -46,9 +47,11 @@ type File struct {
 }
 
 type OSFileSystem struct {
+	Logger *zap.Logger
 }
 
 func (O *OSFileSystem) DeleteFile(dir string, name string) error {
+	O.Logger.Debug("deleting file", zap.String("dir", dir), zap.String("name", name))
 	if err := os.Remove(filepath.Join(dir, name)); err != nil {
 		return fmt.Errorf("error deleting file %s: %s", name, err)
 	}
@@ -56,6 +59,7 @@ func (O *OSFileSystem) DeleteFile(dir string, name string) error {
 }
 
 func (O *OSFileSystem) ModifyFileContent(dir string, name string, content string) error {
+	O.Logger.Debug("modifying file content", zap.String("dir", dir), zap.String("name", name))
 	if err := ioutil.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
 		return fmt.Errorf("error modifying file %s: %s", name, err)
 	}
@@ -63,6 +67,7 @@ func (O *OSFileSystem) ModifyFileContent(dir string, name string, content string
 }
 
 func (O *OSFileSystem) CreateFile(dir string, name string, content string, perms os.FileMode) error {
+	O.Logger.Debug("creating file", zap.String("dir", dir), zap.String("name", name))
 	if err := ioutil.WriteFile(filepath.Join(dir, name), []byte(content), perms); err != nil {
 		return fmt.Errorf("error creating file %s: %s", name, err)
 	}
@@ -70,6 +75,7 @@ func (O *OSFileSystem) CreateFile(dir string, name string, content string, perms
 }
 
 func (O *OSFileSystem) ChangeFileMode(dir string, name string, perms os.FileMode) error {
+	O.Logger.Debug("changing file mode", zap.String("dir", dir), zap.String("name", name))
 	if err := os.Chmod(filepath.Join(dir, name), perms); err != nil {
 		return fmt.Errorf("error changing file mode for file %s: %s", name, err)
 	}
@@ -77,6 +83,7 @@ func (O *OSFileSystem) ChangeFileMode(dir string, name string, perms os.FileMode
 }
 
 func (O *OSFileSystem) FilesInsideDirectory(dir string) ([]File, error) {
+	O.Logger.Debug("getting files inside directory", zap.String("dir", dir))
 	exists, err := O.DirectoryExists(dir)
 	if err != nil {
 		return nil, fmt.Errorf("unable to check if directory exists: %s", err)
@@ -111,6 +118,7 @@ func (O *OSFileSystem) FilesInsideDirectory(dir string) ([]File, error) {
 }
 
 func (O *OSFileSystem) DirectoryExists(dir string) (bool, error) {
+	O.Logger.Debug("checking if directory exists", zap.String("dir", dir))
 	f, err := os.Stat(dir)
 	if err == nil {
 		if f.IsDir() {
@@ -125,6 +133,7 @@ func (O *OSFileSystem) DirectoryExists(dir string) (bool, error) {
 }
 
 func (O *OSFileSystem) DirectoriesInsideDirectory(dir string) ([]string, error) {
+	O.Logger.Debug("getting directories inside directory", zap.String("dir", dir))
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("error reading directory %s: %s", dir, err)
