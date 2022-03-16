@@ -17,6 +17,28 @@ type FileSystem interface {
 	FilesInsideDirectory(dir string) ([]File, error)
 }
 
+func FilesAtRoot(fs FileSystem, dir string) ([]File, error) {
+	var ret []File
+	files, err := fs.FilesInsideDirectory(dir)
+	if err != nil {
+		return nil, fmt.Errorf("error getting files inside directory %s: %w", dir, err)
+	}
+	ret = append(ret, files...)
+	subdirs, err := fs.DirectoriesInsideDirectory(dir)
+	if err != nil {
+		return nil, fmt.Errorf("error getting subdirectories inside directory %s: %w", dir, err)
+	}
+	for _, subdir := range subdirs {
+		files, err := FilesAtRoot(fs, filepath.Join(dir, subdir))
+		if err != nil {
+			return nil, fmt.Errorf("error getting files inside directory %s: %w", dir, err)
+		}
+		ret = append(ret, files...)
+	}
+
+	return files, nil
+}
+
 type File struct {
 	Name    string
 	Content string

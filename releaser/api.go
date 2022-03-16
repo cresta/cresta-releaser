@@ -296,7 +296,7 @@ func (f *FromCommandLine) GetRelease(application string, release string) (*Relea
 }
 
 func (f *FromCommandLine) releaseInPath(path string) (*Release, error) {
-	files, err := f.fs.FilesInsideDirectory(path)
+	files, err := FilesAtRoot(f.fs, path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get files inside release directory %s: %w", path, err)
 	}
