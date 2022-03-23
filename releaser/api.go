@@ -22,6 +22,7 @@ type FromCommandLine struct {
 	fs     FileSystem
 	git    Git
 	github GitHub
+	Logger *zap.Logger
 }
 
 func (f *FromCommandLine) CreateChildApplication(parent string, child string) error {
@@ -86,7 +87,7 @@ func (f *FromCommandLine) CreateChildApplication(parent string, child string) er
 		return fmt.Errorf("failed to read kustomization file for parent application %s: %w", parent, err)
 	}
 	if err := yaml.UnmarshalStrict(content, &kc); err != nil {
-		return fmt.Errorf("failed to unmarshal kustomization file for parent application %s:%s: %w", parent, err)
+		return fmt.Errorf("failed to unmarshal kustomization file for parent application %s: %w", parent, err)
 	}
 	if kc.Resources == nil {
 		kc.Resources = []string{}
@@ -241,8 +242,50 @@ type searchReplace struct {
 	Replace string `yaml:"replace"`
 }
 
+type regexSearchReplace struct {
+	LineRegexMatch string `yaml:"lineRegexMatch"`
+	ReplaceWith    string `yaml:"replaceWith"`
+	FileNameMatch  string `yaml:"fileNameMatch"`
+}
+
 type ReleaseConfig struct {
-	SearchReplace []searchReplace `yaml:"searchReplace"`
+	SearchReplace      []searchReplace      `yaml:"searchReplace"`
+	RegexSearchReplace []regexSearchReplace `yaml:"regexSearchReplace"`
+}
+
+func (c *ReleaseConfig) ApplyToFile(file ReleaseFile, previousReleaseName string, newReleaseName string) (string, error) {
+	if c == nil {
+		return file.Content, nil
+	}
+	if file.Name == releaserFileName {
+		// Don't replace yourself
+		return file.Content, nil
+	}
+	content := file.Content
+	content = strings.ReplaceAll(content, previousReleaseName, newReleaseName)
+	for _, sr := range c.SearchReplace {
+		content = strings.ReplaceAll(content, sr.Search, sr.Replace)
+	}
+	for _, rs := range c.RegexSearchReplace {
+		filesMatch, err := filepath.Match(rs.FileNameMatch, file.Name)
+		if err != nil {
+			return "", fmt.Errorf("error matching glob file name: %w", err)
+		}
+		if rs.FileNameMatch != "" && !filesMatch {
+			continue
+		}
+		re, err := regexp.Compile(rs.LineRegexMatch)
+		if err != nil {
+			return "", fmt.Errorf("error compiling regex %s: %w", rs.LineRegexMatch, err)
+		}
+		content = re.ReplaceAllString(content, rs.ReplaceWith)
+	}
+	return content, nil
+}
+
+func (c *ReleaseConfig) mergeFrom(r ReleaseConfig) {
+	r.SearchReplace = append(r.SearchReplace, r.SearchReplace...)
+	r.RegexSearchReplace = append(r.RegexSearchReplace, r.RegexSearchReplace...)
 }
 
 func (f *FromCommandLine) PreviewRelease(application string, release string) (oldRelease *Release, newRelease *Release, err error) {
@@ -272,65 +315,62 @@ func (f *FromCommandLine) PreviewRelease(application string, release string) (ol
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to get previous release %s: %w", previousReleaseName, err)
 	}
-	nextRelease, err := describeNewRelease(prevRelease, previousReleaseName, release)
+	promotionConfig, err := ReleaseConfigForRelease(f.fs, application, previousReleaseName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to get promotion config for release %s: %w", previousReleaseName, err)
+	}
+	f.Logger.Debug("promotion config", zap.Any("config", promotionConfig))
+	nextRelease, err := describeNewRelease(prevRelease, previousReleaseName, release, promotionConfig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to describe new release: %w", err)
 	}
 	return thisRelease, nextRelease, nil
 }
 
-func filterReleaseOutput(filename string, output string, oldReleaseName string, newReleaseName string, r *ReleaseConfig) string {
-	ret := strings.ReplaceAll(output, oldReleaseName, newReleaseName)
-	ret = replaceAutoPromoteTags(filename, ret)
-	ret = processReleaseConfig(r, ret)
-	return ret
-}
+const releaserFileName = ".releaser.yaml"
 
-func processReleaseConfig(r *ReleaseConfig, ret string) string {
-	if r == nil {
-		return ret
+func ReleaseConfigForRelease(fs FileSystem, application string, release string) (*ReleaseConfig, error) {
+	possibleConfigPaths := []string{
+		filepath.Join("apps"),
+		filepath.Join("apps", application),
+		filepath.Join("apps", application, "releases", release),
 	}
-	for _, sr := range r.SearchReplace {
-		ret = strings.ReplaceAll(ret, sr.Search, sr.Replace)
-	}
-	return ret
-}
-
-var autoPromoteFilter = regexp.MustCompile(`(.*) # filter-auto-promote .*$`)
-
-func replaceAutoPromoteTags(filename string, output string) string {
-	if !strings.HasSuffix(filename, ".yaml") && !strings.HasSuffix(filename, ".yml") {
-		return output
-	}
-	lines := strings.Split(output, "\n")
-	newLines := make([]string, 0, len(lines))
-	hasMatch := false
-	for _, line := range lines {
-		if autoPromoteFilter.MatchString(line) {
-			hasMatch = true
-			newLines = append(newLines, autoPromoteFilter.ReplaceAllString(line, "$1"))
-		} else {
-			newLines = append(newLines, line)
+	var ret *ReleaseConfig
+	for _, p := range possibleConfigPaths {
+		exists, err := fs.FileExists(p, releaserFileName)
+		if err != nil {
+			return nil, fmt.Errorf("unable to check if %s:%s exists: %w", p, releaserFileName, err)
+		}
+		if exists {
+			contents, err := fs.ReadFile(p, releaserFileName)
+			if err != nil {
+				return nil, fmt.Errorf("unable to read %s:%s: %w", p, releaserFileName, err)
+			}
+			var r ReleaseConfig
+			if err := yaml.Unmarshal(contents, &r); err != nil {
+				return nil, fmt.Errorf("unable to parse %s:%s .releaser.yaml: %w", p, releaserFileName, err)
+			}
+			if ret == nil {
+				ret = &r
+			} else {
+				ret.mergeFrom(r)
+			}
 		}
 	}
-	if hasMatch {
-		return strings.Join(newLines, "\n")
-	}
-	return output
+
+	return ret, nil
 }
 
-func describeNewRelease(promoteFrom *Release, previousName string, newName string) (*Release, error) {
-	var releaseConfig ReleaseConfig
-	if configFile, exists := promoteFrom.FilesByName()[".releaser.yaml"]; exists {
-		if err := yaml.Unmarshal([]byte(configFile.Content), &releaseConfig); err != nil {
-			return nil, fmt.Errorf("unable to parse .releaser.yaml: %w", err)
-		}
-	}
+func describeNewRelease(promoteFrom *Release, previousName string, newName string, releaseConfig *ReleaseConfig) (*Release, error) {
 	ret := &Release{}
 	for _, f := range promoteFrom.Files {
+		newContent, err := releaseConfig.ApplyToFile(f, previousName, newName)
+		if err != nil {
+			return nil, fmt.Errorf("unable to apply promotion config to file %s: %w", f.Name, err)
+		}
 		ret.Files = append(ret.Files, ReleaseFile{
 			Name:      f.Name,
-			Content:   filterReleaseOutput(f.Name, f.Content, previousName, newName, &releaseConfig),
+			Content:   newContent,
 			Directory: f.Directory,
 		})
 	}
@@ -422,6 +462,7 @@ func NewFromCommandLine(ctx context.Context, logger *zap.Logger, githubCfg *NewG
 		return nil, fmt.Errorf("failed to create github client: %w", err)
 	}
 	return &FromCommandLine{
+		Logger: logger,
 		fs: &OSFileSystem{
 			Logger: logger,
 		},

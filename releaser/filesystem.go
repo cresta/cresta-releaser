@@ -19,6 +19,7 @@ type FileSystem interface {
 	ChangeFileMode(dir string, name string, perms os.FileMode) error
 	FilesInsideDirectory(dir string) ([]File, error)
 	ReadFile(dir string, name string) ([]byte, error)
+	FileExists(dir string, name string) (bool, error)
 }
 
 func FilesAtRoot(fs FileSystem, dir string) ([]File, error) {
@@ -52,6 +53,17 @@ type File struct {
 
 type OSFileSystem struct {
 	Logger *zap.Logger
+}
+
+func (O *OSFileSystem) FileExists(dir string, name string) (bool, error) {
+	stats, err := os.Stat(filepath.Join(dir, name))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error getting file stats: %w", err)
+	}
+	return !stats.IsDir(), nil
 }
 
 func (O *OSFileSystem) ReadFile(dir string, name string) ([]byte, error) {
