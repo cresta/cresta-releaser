@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,6 +31,13 @@ func (n *NewlineFormatter) WriteString(stdout io.Writer, text string) error {
 }
 
 func (n *NewlineFormatter) WriteObject(into io.Writer, obj interface{}) error {
+	if asT, ok := obj.(encoding.TextMarshaler); ok {
+		txt, err := asT.MarshalText()
+		if err != nil {
+			return err
+		}
+		return n.WriteString(into, string(txt))
+	}
 	_, err := pp.New().Fprint(into, obj)
 	return err
 }

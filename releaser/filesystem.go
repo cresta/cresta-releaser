@@ -2,10 +2,11 @@ package releaser
 
 import (
 	"fmt"
-	"go.uber.org/zap"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+
+	"go.uber.org/zap"
 )
 
 type FileSystem interface {

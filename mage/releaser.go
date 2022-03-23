@@ -3,13 +3,14 @@ package mage
 import (
 	"context"
 	"fmt"
+	"os"
+	"sync"
+
 	"github.com/cresta/cresta-releaser/cmd/cresta-releaser/commands"
 	"github.com/cresta/cresta-releaser/releaser"
 	"github.com/magefile/mage/mg"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"go.uber.org/zap"
-	"os"
-	"sync"
 )
 
 var Instance releaser.Api
@@ -68,6 +69,24 @@ func ListApplications(_ context.Context) error {
 		return err
 	}
 	return getOutputFormat().WriteStringSlice(os.Stdout, apps)
+}
+
+// GetAllReleaseStatus returns a full list of all applications and their releases with the release status.
+func GetAllReleaseStatus(ctx context.Context) error {
+	out, err := releaser.GetAllReleaseStatus(MustGetInstance())
+	if err != nil {
+		return fmt.Errorf("unable to get release status: %w", err)
+	}
+	return getOutputFormat().WriteObject(os.Stdout, out)
+}
+
+// GetAllPendingReleases returns only the applications and releases that are pending (not yet released)
+func GetAllPendingReleases(ctx context.Context) error {
+	out, err := releaser.GetAllPendingReleases(MustGetInstance())
+	if err != nil {
+		return fmt.Errorf("unable to get pending releases: %w", err)
+	}
+	return getOutputFormat().WriteObject(os.Stdout, out)
 }
 
 // GetRelease will get a release for an application

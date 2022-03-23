@@ -1,1 +1,3 @@
-A CLI and API for releasing new kustomize deployments inside a git repository.
+# releaser
+
+An API, CLI, and library for releasing kustomize applications inside a git repository.

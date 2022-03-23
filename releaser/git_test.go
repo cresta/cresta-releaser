@@ -2,9 +2,10 @@ package releaser
 
 import (
 	"context"
+	"testing"
+
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
-	"testing"
 )
 
 func TestCurrentBranchName(t *testing.T) {
