@@ -71,6 +71,38 @@ func GetAllPendingReleases(a Api) (*ApplicationList, error) {
 	return &ret, nil
 }
 
+func FindKustomizationForRelease(a Api, application string, release string) (string, error) {
+	rel, err := a.GetRelease(application, release)
+	if err != nil {
+		return "", fmt.Errorf("failed to get release %s/%s: %w", application, release, err)
+	}
+	var validKustomizationNames = []string{"kustomization.yaml", "kustomization.yml", "Kustomization"}
+	for _, r := range rel.Files {
+		if r.Directory != "" {
+			continue
+		}
+		for _, n := range validKustomizationNames {
+			if r.Name == n {
+				return n, nil
+			}
+		}
+	}
+	return "", nil
+}
+
+func DoesApplicationExist(a Api, application string) (bool, error) {
+	apps, err := a.ListApplications()
+	if err != nil {
+		return false, fmt.Errorf("failed to list applications: %w", err)
+	}
+	for _, app := range apps {
+		if app == application {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func GetAllReleaseStatus(a Api) (*ApplicationList, error) {
 	apps, err := a.ListApplications()
 	if err != nil {

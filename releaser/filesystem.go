@@ -18,6 +18,7 @@ type FileSystem interface {
 	CreateFile(dir string, name string, content string, perms os.FileMode) error
 	ChangeFileMode(dir string, name string, perms os.FileMode) error
 	FilesInsideDirectory(dir string) ([]File, error)
+	ReadFile(dir string, name string) ([]byte, error)
 }
 
 func FilesAtRoot(fs FileSystem, dir string) ([]File, error) {
@@ -51,6 +52,10 @@ type File struct {
 
 type OSFileSystem struct {
 	Logger *zap.Logger
+}
+
+func (O *OSFileSystem) ReadFile(dir string, name string) ([]byte, error) {
+	return ioutil.ReadFile(filepath.Join(dir, name))
 }
 
 func (O *OSFileSystem) CreateDirectory(dir string) error {

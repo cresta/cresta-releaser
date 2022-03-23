@@ -62,6 +62,12 @@ func ListReleases(_ context.Context, application string) error {
 	return getOutputFormat().WriteStringSlice(os.Stdout, releases)
 }
 
+// CreateChildApplication creates a new application named "child" with the release cadence of the parent.  It
+// will also modify parent's 00 release to point to the child.
+func CreateChildApplication(_ context.Context, parent string, child string) error {
+	return MustGetInstance().CreateChildApplication(parent, child)
+}
+
 // ListApplications will list all applications
 func ListApplications(_ context.Context) error {
 	apps, err := MustGetInstance().ListApplications()

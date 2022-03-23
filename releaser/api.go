@@ -9,9 +9,10 @@ import (
 	"regexp"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"sigs.k8s.io/yaml"
 
 	"go.uber.org/zap"
+	"sigs.k8s.io/kustomize/api/types"
 )
 
 // FromCommandLine will process our API using command line execution. It assumes you have things like `git` already
@@ -20,6 +21,81 @@ type FromCommandLine struct {
 	fs     FileSystem
 	git    Git
 	github GitHub
+}
+
+func (f *FromCommandLine) CreateChildApplication(parent string, child string) error {
+	doesParentExist, err := DoesApplicationExist(f, parent)
+	if err != nil {
+		return fmt.Errorf("failed to check if parent application %s exists: %w", parent, err)
+	}
+	if !doesParentExist {
+		return fmt.Errorf("parent application %s does not exist", parent)
+	}
+	doesChildExist, err := DoesApplicationExist(f, child)
+	if err != nil {
+		return fmt.Errorf("failed to check if child application %s exists: %w", child, err)
+	}
+	if doesChildExist {
+		return fmt.Errorf("child application %s already exists", child)
+	}
+	releasesOfParent, err := f.ListReleases(parent)
+	if err != nil {
+		return fmt.Errorf("failed to list releases of parent application %s: %w", parent, err)
+	}
+	parentKustomizationFile, err := FindKustomizationForRelease(f, parent, releasesOfParent[0])
+	if err != nil {
+		return fmt.Errorf("failed to find kustomization for parent application %s: %w", parent, err)
+	}
+	if err := f.fs.CreateDirectory(filepath.Join("apps", child)); err != nil {
+		return fmt.Errorf("failed to create child application directory: %w", err)
+	}
+	const kustomizeFileContent = "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n"
+	if len(releasesOfParent) > 0 {
+		if err := f.fs.CreateDirectory(filepath.Join("apps", child, "releases")); err != nil {
+			return fmt.Errorf("failed to create child application directory: %w", err)
+		}
+		for _, release := range releasesOfParent {
+			if err := f.fs.CreateDirectory(filepath.Join("apps", child, "releases", release)); err != nil {
+				return fmt.Errorf("failed to create child application directory release %s:%s: %w", child, release, err)
+			}
+			if err := f.fs.CreateFile(filepath.Join("apps", child, "releases", release), "kustomization.yaml", kustomizeFileContent, 0755); err != nil {
+				return fmt.Errorf("unable to create kustomization file for child application %s:%s: %w", child, release, err)
+			}
+		}
+	} else {
+		if err := f.fs.CreateFile(filepath.Join("apps", child), "kustomization.yaml", kustomizeFileContent, 0755); err != nil {
+			return fmt.Errorf("unable to create kustomization file for child application %s: %w", child, err)
+		}
+	}
+	var parentKustomizationPath string
+	var newResourcePath string
+	if len(releasesOfParent) > 0 {
+		parentKustomizationPath = filepath.Join("apps", parent, "releases", releasesOfParent[0])
+		newResourcePath = filepath.Join("apps", child, "releases", releasesOfParent[0])
+	} else {
+		parentKustomizationPath = filepath.Join("apps", parent)
+		newResourcePath = filepath.Join("apps", child)
+	}
+	var kc types.Kustomization
+	content, err := f.fs.ReadFile(parentKustomizationPath, parentKustomizationFile)
+	if err != nil {
+		return fmt.Errorf("failed to read kustomization file for parent application %s: %w", parent, err)
+	}
+	if err := yaml.UnmarshalStrict(content, &kc); err != nil {
+		return fmt.Errorf("failed to unmarshal kustomization file for parent application %s:%s: %w", parent, err)
+	}
+	if kc.Resources == nil {
+		kc.Resources = []string{}
+	}
+	kc.Resources = append(kc.Resources, newResourcePath)
+	newContent, err := yaml.Marshal(kc)
+	if err != nil {
+		return fmt.Errorf("failed to marshal kustomization file for parent application %s: %w", parent, err)
+	}
+	if err := f.fs.ModifyFileContent(filepath.Join(newResourcePath), "kustomization.yaml", string(newContent)); err != nil {
+		return fmt.Errorf("failed to modify kustomization file for parent application %s: %w", parent, err)
+	}
+	return nil
 }
 
 func (f *FromCommandLine) MergePullRequestForCurrentRemote(ctx context.Context, prNumber int64) error {
@@ -419,6 +495,9 @@ type ReleaseFile struct {
 
 // Api is an interface into our release process.
 type Api interface {
+	// CreateChildApplication creates a child application that releases with the same cadence as the parent.  It assumes
+	// the child does not exist.
+	CreateChildApplication(parent string, child string) error
 	// ListReleases will list all releases for an application
 	ListReleases(application string) ([]string, error)
 	// ListApplications will list all applications
