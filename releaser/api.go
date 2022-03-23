@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"sigs.k8s.io/yaml"
@@ -46,6 +47,9 @@ func (f *FromCommandLine) CreateChildApplication(parent string, child string) er
 	if err != nil {
 		return fmt.Errorf("failed to find kustomization for parent application %s: %w", parent, err)
 	}
+	if parentKustomizationFile == "" {
+		return fmt.Errorf("parent application %s does not have a kustomization file", parent)
+	}
 	if err := f.fs.CreateDirectory(filepath.Join("apps", child)); err != nil {
 		return fmt.Errorf("failed to create child application directory: %w", err)
 	}
@@ -71,10 +75,10 @@ func (f *FromCommandLine) CreateChildApplication(parent string, child string) er
 	var newResourcePath string
 	if len(releasesOfParent) > 0 {
 		parentKustomizationPath = filepath.Join("apps", parent, "releases", releasesOfParent[0])
-		newResourcePath = filepath.Join("apps", child, "releases", releasesOfParent[0])
+		newResourcePath = filepath.Join("..", "..", "..", child, "releases", releasesOfParent[0])
 	} else {
 		parentKustomizationPath = filepath.Join("apps", parent)
-		newResourcePath = filepath.Join("apps", child)
+		newResourcePath = filepath.Join("..", child)
 	}
 	var kc types.Kustomization
 	content, err := f.fs.ReadFile(parentKustomizationPath, parentKustomizationFile)
@@ -88,11 +92,12 @@ func (f *FromCommandLine) CreateChildApplication(parent string, child string) er
 		kc.Resources = []string{}
 	}
 	kc.Resources = append(kc.Resources, newResourcePath)
+	sort.Strings(kc.Resources)
 	newContent, err := yaml.Marshal(kc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal kustomization file for parent application %s: %w", parent, err)
 	}
-	if err := f.fs.ModifyFileContent(filepath.Join(newResourcePath), "kustomization.yaml", string(newContent)); err != nil {
+	if err := f.fs.ModifyFileContent(parentKustomizationPath, parentKustomizationFile, string(newContent)); err != nil {
 		return fmt.Errorf("failed to modify kustomization file for parent application %s: %w", parent, err)
 	}
 	return nil

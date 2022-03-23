@@ -78,7 +78,7 @@ func FindKustomizationForRelease(a Api, application string, release string) (str
 	}
 	var validKustomizationNames = []string{"kustomization.yaml", "kustomization.yml", "Kustomization"}
 	for _, r := range rel.Files {
-		if r.Directory != "" {
+		if r.Directory != "." {
 			continue
 		}
 		for _, n := range validKustomizationNames {
