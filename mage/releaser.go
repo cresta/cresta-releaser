@@ -79,7 +79,7 @@ func ListApplications(_ context.Context) error {
 
 // GetAllReleaseStatus returns a full list of all applications and their releases with the release status.
 func GetAllReleaseStatus(ctx context.Context) error {
-	out, err := releaser.GetAllReleaseStatus(MustGetInstance())
+	out, err := releaser.GetAllReleaseStatus(ctx, MustGetInstance())
 	if err != nil {
 		return fmt.Errorf("unable to get release status: %w", err)
 	}
@@ -88,7 +88,7 @@ func GetAllReleaseStatus(ctx context.Context) error {
 
 // GetAllPendingReleases returns only the applications and releases that are pending (not yet released)
 func GetAllPendingReleases(ctx context.Context) error {
-	out, err := releaser.GetAllPendingReleases(MustGetInstance())
+	out, err := releaser.GetAllPendingReleases(ctx, MustGetInstance())
 	if err != nil {
 		return fmt.Errorf("unable to get pending releases: %w", err)
 	}

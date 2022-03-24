@@ -25,6 +25,24 @@ type FromCommandLine struct {
 	Logger *zap.Logger
 }
 
+func CheckForPRForRelease(ctx context.Context, a Api, application string, release string) (int64, error) {
+	return a.CheckForPRForBranch(ctx, DefaultBranchNameForRelease(application, release))
+}
+
+func (f *FromCommandLine) CheckForPRForBranch(ctx context.Context, branchName string) (int64, error) {
+	owner, repo, err := f.git.GetRemoteAsGithubRepo(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get remote as github repo: %w", err)
+	}
+
+	pr, err := f.github.FindPRForBranch(ctx, owner, repo, branchName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to find pr for branch: %w", err)
+	}
+
+	return pr, nil
+}
+
 func (f *FromCommandLine) CreateChildApplication(parent string, child string) error {
 	doesParentExist, err := DoesApplicationExist(f, parent)
 	if err != nil {
@@ -128,18 +146,7 @@ func (f *FromCommandLine) CheckForPROnCurrentBranch(ctx context.Context) (int64,
 	if err != nil {
 		return 0, fmt.Errorf("failed to get current branch: %w", err)
 	}
-
-	owner, repo, err := f.git.GetRemoteAsGithubRepo(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get remote as github repo: %w", err)
-	}
-
-	pr, err := f.github.FindPRForBranch(ctx, owner, repo, branch)
-	if err != nil {
-		return 0, fmt.Errorf("failed to find pr for branch: %w", err)
-	}
-
-	return pr, nil
+	return f.CheckForPRForBranch(ctx, branch)
 }
 
 func (f *FromCommandLine) GithubWhoami(ctx context.Context) (string, error) {
@@ -181,13 +188,17 @@ func (f *FromCommandLine) CommitForRelease(ctx context.Context, application stri
 	return f.git.CommitAll(ctx, msg)
 }
 
+func DefaultBranchNameForRelease(application string, release string) string {
+	return fmt.Sprintf("releaser-%s-%s", application, release)
+}
+
 func (f *FromCommandLine) FreshGitBranch(ctx context.Context, application string, release string, forcedName string) error {
 	if err := f.git.VerifyFresh(ctx); err != nil {
 		return fmt.Errorf("git is not clean: %w", err)
 	}
 	branchName := forcedName
 	if branchName == "" {
-		branchName = fmt.Sprintf("creta-release-%s-%s", application, release)
+		branchName = DefaultBranchNameForRelease(application, release)
 	}
 	if err := f.git.CheckoutNewBranch(ctx, branchName); err != nil {
 		return fmt.Errorf("failed to create branch: %w", err)
@@ -575,4 +586,6 @@ type Api interface {
 	ApprovePullRequestForCurrentRemote(ctx context.Context, approvalMessage string, prNumber int64) error
 	// MergePullRequestForCurrentRemote will merge an approved PR
 	MergePullRequestForCurrentRemote(ctx context.Context, prNumber int64) error
+	// CheckForPRForBranch returns the PR number for a branch of the current git repository
+	CheckForPRForBranch(ctx context.Context, branchName string) (int64, error)
 }

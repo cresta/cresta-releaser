@@ -1,6 +1,7 @@
 package releaser
 
 import (
+	"context"
 	"encoding"
 	"fmt"
 	"strings"
@@ -14,7 +15,7 @@ func (a *ApplicationList) MarshalText() (text []byte, err error) {
 	var ret strings.Builder
 	for _, app := range a.Application {
 		for _, rel := range app.ReleaseCandidate {
-			ret.WriteString(fmt.Sprintf("%s %s %s\n", app.Name, rel.Name, rel.Status))
+			ret.WriteString(fmt.Sprintf("%s %s %s %d\n", app.Name, rel.Name, rel.Status, rel.ExistingPR))
 		}
 	}
 	return []byte(ret.String()), nil
@@ -23,8 +24,9 @@ func (a *ApplicationList) MarshalText() (text []byte, err error) {
 var _ encoding.TextMarshaler = &ApplicationList{}
 
 type ReleaseCandidate struct {
-	Name   string                 `json:"name"`
-	Status ReleaseCandidateStatus `json:"status"`
+	Name       string                 `json:"name"`
+	Status     ReleaseCandidateStatus `json:"status"`
+	ExistingPR int64                  `json:"existing_pr"`
 }
 
 type Application struct {
@@ -51,8 +53,8 @@ const (
 	RC_STATUS_RELEASED
 )
 
-func GetAllPendingReleases(a Api) (*ApplicationList, error) {
-	all, err := GetAllReleaseStatus(a)
+func GetAllPendingReleases(ctx context.Context, a Api) (*ApplicationList, error) {
+	all, err := GetAllReleaseStatus(ctx, a)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get all release status: %w", err)
 	}
@@ -103,7 +105,7 @@ func DoesApplicationExist(a Api, application string) (bool, error) {
 	return false, nil
 }
 
-func GetAllReleaseStatus(a Api) (*ApplicationList, error) {
+func GetAllReleaseStatus(ctx context.Context, a Api) (*ApplicationList, error) {
 	apps, err := a.ListApplications()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get application list: %w", err)
@@ -130,10 +132,18 @@ func GetAllReleaseStatus(a Api) (*ApplicationList, error) {
 				return nil, fmt.Errorf("failed to get preview for %s:%s: %w", app.Name, release, err)
 			}
 			hasChange := old.Yaml() != newRelease.Yaml()
-			app.ReleaseCandidate = append(app.ReleaseCandidate, ReleaseCandidate{
+			rc := ReleaseCandidate{
 				Name:   release,
 				Status: getStatus(hasChange),
-			})
+			}
+			if rc.Status == RC_STATUS_PENDING {
+				prNum, err := CheckForPRForRelease(ctx, a, app.Name, release)
+				if err != nil {
+					return nil, fmt.Errorf("failed to check for PR for %s:%s: %w", app.Name, release, err)
+				}
+				rc.ExistingPR = prNum
+			}
+			app.ReleaseCandidate = append(app.ReleaseCandidate, rc)
 		}
 		ret.Application = append(ret.Application, app)
 	}

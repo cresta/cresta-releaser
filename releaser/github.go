@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/bradleyfalzon/ghinstallation"
 	"github.com/shurcooL/githubv4"
@@ -173,6 +174,26 @@ type NewGQLClientConfig struct {
 	Token          string
 }
 
+var DefaultGQLClientConfig = NewGQLClientConfig{
+	Rt:             http.DefaultTransport,
+	AppID:          intFromOsEnv("GITHUB_APP_ID"),
+	InstallationID: intFromOsEnv("GITHUB_INSTALLATION_ID"),
+	PEMKeyLoc:      os.Getenv("GITHUB_PEM_KEY_LOC"),
+	Token:          os.Getenv("GITHUB_TOKEN"),
+}
+
+func intFromOsEnv(s string) int64 {
+	v := os.Getenv(s)
+	if v == "" {
+		return 0
+	}
+	i, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return i
+}
+
 func clientFromToken(_ context.Context, logger *zap.Logger, token string) (GitHub, error) {
 	src := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
@@ -230,23 +251,44 @@ type configFileAuths struct {
 }
 
 func NewGQLClient(ctx context.Context, logger *zap.Logger, cfg *NewGQLClientConfig) (GitHub, error) {
+	cfg = mergeGithubConfigs(cfg, &DefaultGQLClientConfig)
 	if cfg != nil && cfg.Token != "" {
 		return clientFromToken(ctx, logger, cfg.Token)
 	}
 	if cfg != nil && cfg.PEMKeyLoc != "" {
 		return clientFromPEM(ctx, logger, cfg.Rt, cfg.AppID, cfg.InstallationID, cfg.PEMKeyLoc)
 	}
-	if os.Getenv("GITHUB_TOKEN") != "" {
-		return clientFromToken(ctx, logger, os.Getenv("GITHUB_TOKEN"))
-	}
 	if token := tokenFromGithubCLI(); token != "" {
 		return clientFromToken(ctx, logger, token)
 	}
-	return nil, fmt.Errorf("no token provided")
+	return nil, fmt.Errorf("no token provided: I need either GITHUB_TOKEN env, existing auth via the `gh` CLI, or a PEM key")
+}
+
+func mergeGithubConfigs(cfg *NewGQLClientConfig, config *NewGQLClientConfig) *NewGQLClientConfig {
+	if cfg == nil {
+		return config
+	}
+	var ret NewGQLClientConfig
+	if cfg.Rt == nil {
+		ret.Rt = config.Rt
+	}
+	if cfg.AppID == 0 {
+		ret.AppID = config.AppID
+	}
+	if cfg.InstallationID == 0 {
+		ret.InstallationID = config.InstallationID
+	}
+	if cfg.PEMKeyLoc == "" {
+		ret.PEMKeyLoc = config.PEMKeyLoc
+	}
+	if cfg.Token == "" {
+		ret.Token = config.Token
+	}
+	return &ret
 }
 
 func (g *GithubGraphqlAPI) Self(ctx context.Context) (string, error) {
-	g.Logger.Debug("fetcing self")
+	g.Logger.Debug("fetching self")
 	defer g.Logger.Debug("done fetching self")
 	var q struct {
 		Viewer struct {
@@ -255,7 +297,7 @@ func (g *GithubGraphqlAPI) Self(ctx context.Context) (string, error) {
 		}
 	}
 	if err := g.ClientV4.Query(ctx, &q, nil); err != nil {
-		return "", fmt.Errorf("unable to run graphql query: %w", err)
+		return "", fmt.Errorf("unable to run graphql query self: %w", err)
 	}
 	return string(q.Viewer.Login), nil
 }
