@@ -16,12 +16,12 @@ import (
 	"sigs.k8s.io/kustomize/api/types"
 )
 
-// FromCommandLine will process our API using command line execution. It assumes you have things like `git` already
+// FromCommandLine will process our API using command line execution. It assumes you have things like `Git` already
 // installed.
 type FromCommandLine struct {
-	fs     FileSystem
-	git    Git
-	github GitHub
+	Fs     FileSystem
+	Git    Git
+	Github GitHub
 	Logger *zap.Logger
 }
 
@@ -30,12 +30,12 @@ func CheckForPRForRelease(ctx context.Context, a Api, application string, releas
 }
 
 func (f *FromCommandLine) CheckForPRForBranch(ctx context.Context, branchName string) (int64, error) {
-	owner, repo, err := f.git.GetRemoteAsGithubRepo(ctx)
+	owner, repo, err := f.Git.GetRemoteAsGithubRepo(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get remote as github repo: %w", err)
+		return 0, fmt.Errorf("failed to get remote as Github repo: %w", err)
 	}
 
-	pr, err := f.github.FindPRForBranch(ctx, owner, repo, branchName)
+	pr, err := f.Github.FindPRForBranch(ctx, owner, repo, branchName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to find pr for branch: %w", err)
 	}
@@ -69,24 +69,24 @@ func (f *FromCommandLine) CreateChildApplication(parent string, child string) er
 	if parentKustomizationFile == "" {
 		return fmt.Errorf("parent application %s does not have a kustomization file", parent)
 	}
-	if err := f.fs.CreateDirectory(filepath.Join("apps", child)); err != nil {
+	if err := f.Fs.CreateDirectory(filepath.Join("apps", child)); err != nil {
 		return fmt.Errorf("failed to create child application directory: %w", err)
 	}
 	const kustomizeFileContent = "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n"
 	if len(releasesOfParent) > 0 {
-		if err := f.fs.CreateDirectory(filepath.Join("apps", child, "releases")); err != nil {
+		if err := f.Fs.CreateDirectory(filepath.Join("apps", child, "releases")); err != nil {
 			return fmt.Errorf("failed to create child application directory: %w", err)
 		}
 		for _, release := range releasesOfParent {
-			if err := f.fs.CreateDirectory(filepath.Join("apps", child, "releases", release)); err != nil {
+			if err := f.Fs.CreateDirectory(filepath.Join("apps", child, "releases", release)); err != nil {
 				return fmt.Errorf("failed to create child application directory release %s:%s: %w", child, release, err)
 			}
-			if err := f.fs.CreateFile(filepath.Join("apps", child, "releases", release), "kustomization.yaml", kustomizeFileContent, 0755); err != nil {
+			if err := f.Fs.CreateFile(filepath.Join("apps", child, "releases", release), "kustomization.yaml", kustomizeFileContent, 0755); err != nil {
 				return fmt.Errorf("unable to create kustomization file for child application %s:%s: %w", child, release, err)
 			}
 		}
 	} else {
-		if err := f.fs.CreateFile(filepath.Join("apps", child), "kustomization.yaml", kustomizeFileContent, 0755); err != nil {
+		if err := f.Fs.CreateFile(filepath.Join("apps", child), "kustomization.yaml", kustomizeFileContent, 0755); err != nil {
 			return fmt.Errorf("unable to create kustomization file for child application %s: %w", child, err)
 		}
 	}
@@ -100,7 +100,7 @@ func (f *FromCommandLine) CreateChildApplication(parent string, child string) er
 		newResourcePath = filepath.Join("..", child)
 	}
 	var kc types.Kustomization
-	content, err := f.fs.ReadFile(parentKustomizationPath, parentKustomizationFile)
+	content, err := f.Fs.ReadFile(parentKustomizationPath, parentKustomizationFile)
 	if err != nil {
 		return fmt.Errorf("failed to read kustomization file for parent application %s: %w", parent, err)
 	}
@@ -116,33 +116,33 @@ func (f *FromCommandLine) CreateChildApplication(parent string, child string) er
 	if err != nil {
 		return fmt.Errorf("failed to marshal kustomization file for parent application %s: %w", parent, err)
 	}
-	if err := f.fs.ModifyFileContent(parentKustomizationPath, parentKustomizationFile, string(newContent)); err != nil {
+	if err := f.Fs.ModifyFileContent(parentKustomizationPath, parentKustomizationFile, string(newContent)); err != nil {
 		return fmt.Errorf("failed to modify kustomization file for parent application %s: %w", parent, err)
 	}
 	return nil
 }
 
 func (f *FromCommandLine) MergePullRequestForCurrentRemote(ctx context.Context, prNumber int64) error {
-	owner, repo, err := f.git.GetRemoteAsGithubRepo(ctx)
+	owner, repo, err := f.Git.GetRemoteAsGithubRepo(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get remote as github repo: %w", err)
+		return fmt.Errorf("failed to get remote as Github repo: %w", err)
 	}
-	return f.github.MergePullRequest(ctx, owner, repo, prNumber)
+	return f.Github.MergePullRequest(ctx, owner, repo, prNumber)
 }
 
 func (f *FromCommandLine) ApprovePullRequestForCurrentRemote(ctx context.Context, approvalMessage string, prNumber int64) error {
-	owner, repo, err := f.git.GetRemoteAsGithubRepo(ctx)
+	owner, repo, err := f.Git.GetRemoteAsGithubRepo(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get remote as github repo: %w", err)
+		return fmt.Errorf("failed to get remote as Github repo: %w", err)
 	}
 	if approvalMessage == "" {
 		approvalMessage = "Approved by cresta-releaser"
 	}
-	return f.github.AcceptPullRequest(ctx, approvalMessage, owner, repo, prNumber)
+	return f.Github.AcceptPullRequest(ctx, approvalMessage, owner, repo, prNumber)
 }
 
 func (f *FromCommandLine) CheckForPROnCurrentBranch(ctx context.Context) (int64, error) {
-	branch, err := f.git.CurrentBranchName(ctx)
+	branch, err := f.Git.CurrentBranchName(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get current branch: %w", err)
 	}
@@ -150,42 +150,42 @@ func (f *FromCommandLine) CheckForPROnCurrentBranch(ctx context.Context) (int64,
 }
 
 func (f *FromCommandLine) GithubWhoami(ctx context.Context) (string, error) {
-	return f.github.Self(ctx)
+	return f.Github.Self(ctx)
 }
 
 func (f *FromCommandLine) PullRequestCurrent(ctx context.Context) error {
-	currentBranch, err := f.git.CurrentBranchName(ctx)
+	currentBranch, err := f.Git.CurrentBranchName(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get current branch: %w", err)
 	}
-	owner, repo, err := f.git.GetRemoteAsGithubRepo(ctx)
+	owner, repo, err := f.Git.GetRemoteAsGithubRepo(ctx)
 	if err != nil {
 		return fmt.Errorf("unable to parse remote URL: %w", err)
 	}
-	info, err := f.github.RepositoryInfo(ctx, owner, repo)
+	info, err := f.Github.RepositoryInfo(ctx, owner, repo)
 	if err != nil {
 		return fmt.Errorf("unable to get repository info for %s/%s: %w", owner, repo, err)
 	}
-	if err := f.github.CreatePullRequest(ctx, info.Repository.ID, string(info.Repository.DefaultBranchRef.Name), currentBranch, "master", "Update release notes"); err != nil {
+	if err := f.Github.CreatePullRequest(ctx, info.Repository.ID, string(info.Repository.DefaultBranchRef.Name), currentBranch, "master", "Update release notes"); err != nil {
 		return fmt.Errorf("unable to create pull request: %w", err)
 	}
 	return nil
 }
 
 func (f *FromCommandLine) ForcePushCurrentBranch(ctx context.Context) error {
-	currentBranch, err := f.git.CurrentBranchName(ctx)
+	currentBranch, err := f.Git.CurrentBranchName(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get current branch: %w", err)
 	}
 	if currentBranch == "master" || currentBranch == "main" {
 		return fmt.Errorf("cannot force push master or main branch")
 	}
-	return f.git.ForcePushHead(ctx, "origin", currentBranch)
+	return f.Git.ForcePushHead(ctx, "origin", currentBranch)
 }
 
 func (f *FromCommandLine) CommitForRelease(ctx context.Context, application string, release string) error {
 	msg := fmt.Sprintf("cresta-releaser: %s:%s", application, release)
-	return f.git.CommitAll(ctx, msg)
+	return f.Git.CommitAll(ctx, msg)
 }
 
 func DefaultBranchNameForRelease(application string, release string) string {
@@ -193,14 +193,14 @@ func DefaultBranchNameForRelease(application string, release string) string {
 }
 
 func (f *FromCommandLine) FreshGitBranch(ctx context.Context, application string, release string, forcedName string) error {
-	if err := f.git.VerifyFresh(ctx); err != nil {
-		return fmt.Errorf("git is not clean: %w", err)
+	if err := f.Git.VerifyFresh(ctx); err != nil {
+		return fmt.Errorf("Git is not clean: %w", err)
 	}
 	branchName := forcedName
 	if branchName == "" {
 		branchName = DefaultBranchNameForRelease(application, release)
 	}
-	if err := f.git.CheckoutNewBranch(ctx, branchName); err != nil {
+	if err := f.Git.CheckoutNewBranch(ctx, branchName); err != nil {
 		return fmt.Errorf("failed to create branch: %w", err)
 	}
 	return nil
@@ -213,13 +213,13 @@ func (f *FromCommandLine) ApplyRelease(application string, release string, oldRe
 	for fileName, file := range oldFiles {
 		newContent, exists := newFiles[fileName]
 		if !exists {
-			if err := f.fs.DeleteFile(filepath.Join(releaseDirectory, file.Directory), fileName); err != nil {
+			if err := f.Fs.DeleteFile(filepath.Join(releaseDirectory, file.Directory), fileName); err != nil {
 				return fmt.Errorf("error deleting file %s: %s", fileName, err)
 			}
 			continue
 		}
 		if file.Content != newContent.Content {
-			if err := f.fs.ModifyFileContent(filepath.Join(releaseDirectory, file.Directory), fileName, newContent.Content); err != nil {
+			if err := f.Fs.ModifyFileContent(filepath.Join(releaseDirectory, file.Directory), fileName, newContent.Content); err != nil {
 				return fmt.Errorf("error modifying file %s: %s", fileName, err)
 			}
 		}
@@ -229,10 +229,10 @@ func (f *FromCommandLine) ApplyRelease(application string, release string, oldRe
 		if exists {
 			continue
 		}
-		if err := f.fs.CreateDirectory(filepath.Join(releaseDirectory, file.Directory)); err != nil {
+		if err := f.Fs.CreateDirectory(filepath.Join(releaseDirectory, file.Directory)); err != nil {
 			return fmt.Errorf("error creating directory %s: %s", file.Directory, err)
 		}
-		if err := f.fs.CreateFile(filepath.Join(releaseDirectory, file.Directory), fileName, file.Content, 0744); err != nil {
+		if err := f.Fs.CreateFile(filepath.Join(releaseDirectory, file.Directory), fileName, file.Content, 0744); err != nil {
 			return fmt.Errorf("error creating file %s: %s", fileName, err)
 		}
 	}
@@ -326,7 +326,7 @@ func (f *FromCommandLine) PreviewRelease(application string, release string) (ol
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to get previous release %s: %w", previousReleaseName, err)
 	}
-	promotionConfig, err := ReleaseConfigForRelease(f.fs, application, previousReleaseName)
+	promotionConfig, err := ReleaseConfigForRelease(f.Fs, application, previousReleaseName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to get promotion config for release %s: %w", previousReleaseName, err)
 	}
@@ -398,21 +398,21 @@ func indexOf(s string, in []string) int {
 }
 
 func (f *FromCommandLine) GetRelease(application string, release string) (*Release, error) {
-	exists, err := f.fs.DirectoryExists("apps")
+	exists, err := f.Fs.DirectoryExists("apps")
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if apps directory exists: %w", err)
 	}
 	if !exists {
 		return nil, fmt.Errorf("apps directory does not exist")
 	}
-	existsApp, err := f.fs.DirectoryExists(filepath.Join("apps", application))
+	existsApp, err := f.Fs.DirectoryExists(filepath.Join("apps", application))
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if application directory exists %s: %w", application, err)
 	}
 	if !existsApp {
 		return nil, fmt.Errorf("application %s does not exist", application)
 	}
-	existsReleases, err := f.fs.DirectoryExists(filepath.Join("apps", application, "releases"))
+	existsReleases, err := f.Fs.DirectoryExists(filepath.Join("apps", application, "releases"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if releases directory exists %s: %w", application, err)
 	}
@@ -422,7 +422,7 @@ func (f *FromCommandLine) GetRelease(application string, release string) (*Relea
 		}
 		return nil, fmt.Errorf("releases directory does not exist for application %s", application)
 	}
-	existsRelease, err := f.fs.DirectoryExists(filepath.Join("apps", application, "releases", release))
+	existsRelease, err := f.Fs.DirectoryExists(filepath.Join("apps", application, "releases", release))
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if existing release directory exists %s: %w", application, err)
 	}
@@ -433,7 +433,7 @@ func (f *FromCommandLine) GetRelease(application string, release string) (*Relea
 }
 
 func (f *FromCommandLine) releaseInPath(path string) (*Release, error) {
-	files, err := FilesAtRoot(f.fs, path)
+	files, err := FilesAtRoot(f.Fs, path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get files inside release directory %s: %w", path, err)
 	}
@@ -453,14 +453,14 @@ func (f *FromCommandLine) releaseInPath(path string) (*Release, error) {
 }
 
 func (f *FromCommandLine) ListApplications() ([]string, error) {
-	exists, err := f.fs.DirectoryExists("apps")
+	exists, err := f.Fs.DirectoryExists("apps")
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if apps directory exists: %w", err)
 	}
 	if !exists {
 		return nil, fmt.Errorf("apps directory does not exist")
 	}
-	dirs, err := f.fs.DirectoriesInsideDirectory("apps")
+	dirs, err := f.Fs.DirectoriesInsideDirectory("apps")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list apps: %w", err)
 	}
@@ -470,43 +470,43 @@ func (f *FromCommandLine) ListApplications() ([]string, error) {
 func NewFromCommandLine(ctx context.Context, logger *zap.Logger, githubCfg *NewGQLClientConfig) (*FromCommandLine, error) {
 	gh, err := NewGQLClient(ctx, logger, githubCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create github client: %w", err)
+		return nil, fmt.Errorf("failed to create Github client: %w", err)
 	}
 	return &FromCommandLine{
 		Logger: logger,
-		fs: &OSFileSystem{
+		Fs: &OSFileSystem{
 			Logger: logger,
 		},
-		git: &GitCli{
+		Git: &GitCli{
 			Logger: logger,
 		},
-		github: gh,
+		Github: gh,
 	}, nil
 }
 
 func (f *FromCommandLine) ListReleases(application string) ([]string, error) {
-	exists, err := f.fs.DirectoryExists("apps")
+	exists, err := f.Fs.DirectoryExists("apps")
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if apps directory exists: %w", err)
 	}
 	if !exists {
 		return nil, fmt.Errorf("apps directory does not exist")
 	}
-	existsApp, err := f.fs.DirectoryExists(filepath.Join("apps", application))
+	existsApp, err := f.Fs.DirectoryExists(filepath.Join("apps", application))
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if application directory exists %s: %w", application, err)
 	}
 	if !existsApp {
 		return nil, fmt.Errorf("application %s does not exist", application)
 	}
-	existsReleases, err := f.fs.DirectoryExists(filepath.Join("apps", application, "releases"))
+	existsReleases, err := f.Fs.DirectoryExists(filepath.Join("apps", application, "releases"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if releases directory exists %s: %w", application, err)
 	}
 	if !existsReleases {
 		return nil, nil
 	}
-	dirs, err := f.fs.DirectoriesInsideDirectory(filepath.Join("apps", application, "releases"))
+	dirs, err := f.Fs.DirectoriesInsideDirectory(filepath.Join("apps", application, "releases"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list releases for application %s: %w", application, err)
 	}
@@ -515,7 +515,7 @@ func (f *FromCommandLine) ListReleases(application string) ([]string, error) {
 
 var _ Api = &FromCommandLine{}
 
-// A Release is a collection of files that we intend to change in git
+// A Release is a collection of files that we intend to change in Git
 type Release struct {
 	// Files is each released file
 	Files []ReleaseFile
@@ -567,10 +567,10 @@ type Api interface {
 	// ApplyRelease will promote a release to be the current version by applying the previously
 	// fetched PreviewRelease
 	ApplyRelease(application string, release string, oldRelease *Release, newRelease *Release) error
-	// FreshGitBranch will create a fresh git branch for releasing.  The name of the branch will somewhat match the
+	// FreshGitBranch will create a fresh Git branch for releasing.  The name of the branch will somewhat match the
 	// release + application name.
 	FreshGitBranch(ctx context.Context, application string, release string, forcedName string) error
-	// CommitForRelease will commit the release to the git branch.  It assumes you've already called ApplyRelease
+	// CommitForRelease will commit the release to the Git branch.  It assumes you've already called ApplyRelease
 	CommitForRelease(ctx context.Context, application string, release string) error
 	// ForcePushCurrentBranch will force push the current branch to the remote repository as a branch with the same name.
 	// Fails on branches master or main.
@@ -580,12 +580,12 @@ type Api interface {
 	// CheckForPROnCurrentBranch will check if there is a pull request on the current branch.  Returns 0 if there is no
 	// PR, otherwise the PR number
 	CheckForPROnCurrentBranch(ctx context.Context) (int64, error)
-	// GithubWhoami returns who the CLI thinks you are on github
+	// GithubWhoami returns who the CLI thinks you are on Github
 	GithubWhoami(ctx context.Context) (string, error)
 	// ApprovePullRequestForCurrentRemote will approve the pull request on the current remote
 	ApprovePullRequestForCurrentRemote(ctx context.Context, approvalMessage string, prNumber int64) error
 	// MergePullRequestForCurrentRemote will merge an approved PR
 	MergePullRequestForCurrentRemote(ctx context.Context, prNumber int64) error
-	// CheckForPRForBranch returns the PR number for a branch of the current git repository
+	// CheckForPRForBranch returns the PR number for a branch of the current Git repository
 	CheckForPRForBranch(ctx context.Context, branchName string) (int64, error)
 }

@@ -33,6 +33,7 @@ type GitHub interface {
 	MergePullRequest(ctx context.Context, owner string, name string, number int64) error
 	// FindPullRequestOid returns the OID of the PR
 	FindPullRequestOid(ctx context.Context, owner string, name string, number int64) (githubv4.ID, error)
+	GetAccessToken(ctx context.Context) (string, error)
 }
 
 type RepositoryInfo struct {
@@ -53,8 +54,13 @@ type createPullRequest struct {
 }
 
 type GithubGraphqlAPI struct {
-	ClientV4 *githubv4.Client
-	Logger   *zap.Logger
+	ClientV4      *githubv4.Client
+	Logger        *zap.Logger
+	tokenFunction func(ctx context.Context) (string, error)
+}
+
+func (g *GithubGraphqlAPI) GetAccessToken(ctx context.Context) (string, error) {
+	return g.tokenFunction(ctx)
 }
 
 func (g *GithubGraphqlAPI) FindPullRequestOid(ctx context.Context, owner string, name string, number int64) (githubv4.ID, error) {
@@ -204,6 +210,9 @@ func clientFromToken(_ context.Context, logger *zap.Logger, token string) (GitHu
 	return &GithubGraphqlAPI{
 		ClientV4: gql,
 		Logger:   logger,
+		tokenFunction: func(_ context.Context) (string, error) {
+			return token, nil
+		},
 	}, nil
 }
 
@@ -223,6 +232,9 @@ func clientFromPEM(ctx context.Context, logger *zap.Logger, baseRoundTripper htt
 	return &GithubGraphqlAPI{
 		ClientV4: gql,
 		Logger:   logger,
+		tokenFunction: func(ctx context.Context) (string, error) {
+			return trans.Token(ctx)
+		},
 	}, nil
 }
 
@@ -240,10 +252,16 @@ func tokenFromGithubCLI() string {
 	if err := yaml.Unmarshal(b, &out); err != nil {
 		return ""
 	}
-	if _, exists := out["github.com"]; !exists {
-		return ""
+	return tokenForAny(out, "github.com", "Github.com")
+}
+
+func tokenForAny(m map[string]configFileAuths, hosts ...string) string {
+	for _, host := range hosts {
+		if auth, exists := m[host]; exists {
+			return auth.Token
+		}
 	}
-	return out["github.com"].Token
+	return ""
 }
 
 type configFileAuths struct {

@@ -17,10 +17,38 @@ type Git interface {
 	CurrentBranchName(ctx context.Context) (string, error)
 	ForcePushHead(ctx context.Context, repository string, ref string) error
 	GetRemoteAsGithubRepo(ctx context.Context) (string, string, error)
+	CloneURL(ctx context.Context, url string, into string) error
+	ResetClean(ctx context.Context) error
+	FetchAllFromRemote(ctx context.Context) error
+	ResetToOriginalBranch(ctx context.Context) error
 }
 
 type GitCli struct {
 	Logger *zap.Logger
+}
+
+func (g *GitCli) ResetToOriginalBranch(ctx context.Context) error {
+	if err := pipe.Shell("git checkout master").Run(ctx); err != nil {
+		return fmt.Errorf("failed to checkout master: %w", err)
+	}
+	return g.ResetClean(ctx)
+}
+
+func (g *GitCli) FetchAllFromRemote(ctx context.Context) error {
+	return pipe.Shell("git fetch --all -v").Run(ctx)
+}
+
+func (g *GitCli) ResetClean(ctx context.Context) error {
+	if err := pipe.Shell("Git clean -ffdx").Run(ctx); err != nil {
+		return fmt.Errorf("Git clean failed: %w", err)
+	}
+	return pipe.Shell("git reset --hard").Run(ctx)
+}
+
+func (g *GitCli) CloneURL(ctx context.Context, url string, into string) error {
+	g.Logger.Debug("starting to run command clone")
+	defer g.Logger.Debug("done with command clone")
+	return pipe.NewPiped("git", "clone", url, into).Run(ctx)
 }
 
 func (g *GitCli) runAndLogOutput(ctx context.Context, cmd *pipe.PipedCmd) (bytes.Buffer, bytes.Buffer, error) {
@@ -39,18 +67,15 @@ func (g *GitCli) GetRemoteAsGithubRepo(ctx context.Context) (string, string, err
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get remote URL %s: %s", stderr.String(), err)
 	}
-	// Will either look like
-	// * https://github.com/cresta/cresta-releaser.git
-	// * git@github.com:cresta/cresta-releaser.git
-	remote := strings.TrimSpace(stdout.String())
-	remote = strings.TrimPrefix(remote, "https://github.com/")
-	remote = strings.TrimPrefix(remote, "git@github.com:")
-	remote = strings.TrimSuffix(remote, ".git")
-	parts := strings.Split(remote, "/")
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("failed to parse remote URL %s", remote)
+	remoteURL := stdout.String()
+	remoteURL = strings.TrimSpace(remoteURL)
+	remoteURL = strings.ToLower(remoteURL)
+	remoteURL = strings.TrimSuffix(remoteURL, ".git")
+	parts := strings.Split(remoteURL, "/")
+	if len(parts) < 2 {
+		return "", "", fmt.Errorf("failed to parse remote URL %s", remoteURL)
 	}
-	return parts[0], parts[1], nil
+	return parts[len(parts)-2], parts[len(parts)-1], nil
 }
 
 func (g *GitCli) CurrentBranchName(ctx context.Context) (string, error) {
@@ -77,7 +102,7 @@ func (g *GitCli) VerifyFresh(ctx context.Context) error {
 	var stdout, stderr bytes.Buffer
 	err := pipe.Shell("git status --short").Execute(ctx, nil, &stdout, &stderr)
 	if err != nil {
-		return fmt.Errorf("git status failed: %w", err)
+		return fmt.Errorf("Git status failed: %w", err)
 	}
 	if stdout.Len() > 0 {
 		return fmt.Errorf("checkout is not fresh: %s", stdout.String())
@@ -88,10 +113,10 @@ func (g *GitCli) VerifyFresh(ctx context.Context) error {
 func (g *GitCli) CommitAll(ctx context.Context, message string) error {
 	var stdout, stderr bytes.Buffer
 	if err := pipe.Shell("git add .").Execute(ctx, nil, &stdout, &stderr); err != nil {
-		return fmt.Errorf("git add failed (%s %s): %w", stdout.String(), stderr.String(), err)
+		return fmt.Errorf("Git add failed (%s %s): %w", stdout.String(), stderr.String(), err)
 	}
 	if err := pipe.NewPiped("git", "commit", "-a", "-m", message).Execute(ctx, nil, &stdout, &stderr); err != nil {
-		return fmt.Errorf("git commit failed (%s %s): %w", stdout.String(), stderr.String(), err)
+		return fmt.Errorf("Git commit failed (%s %s): %w", stdout.String(), stderr.String(), err)
 	}
 	return nil
 }
@@ -100,7 +125,7 @@ func (g *GitCli) CheckoutNewBranch(ctx context.Context, branch string) error {
 	var stdout, stderr bytes.Buffer
 	err := pipe.NewPiped("git", "checkout", "-b", branch, "origin/master").Execute(ctx, nil, &stdout, &stderr)
 	if err != nil {
-		return fmt.Errorf("git checkout failed: %w", err)
+		return fmt.Errorf("Git checkout failed: %w", err)
 	}
 	return nil
 }

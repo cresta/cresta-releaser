@@ -8,7 +8,7 @@ import (
 )
 
 func BuildTwirp(ctx context.Context) error {
-	return pipe.Shell("protoc --proto_path=. --go_out=. --go_opt=module=github.com/cresta/cresta-releaser --twirp_out=. --twirp_opt=module=github.com/cresta/cresta-releaser rpc/releaser-server/ReleaserServer.proto").Run(ctx)
+	return pipe.Shell("protoc --proto_path=. --go_out=. --go_opt=module=github.com/cresta/cresta-releaser --twirp_out=. --twirp_opt=module=github.com/cresta/cresta-releaser rpc/releaser/Releaser.proto").Run(ctx)
 }
 
 func InstallTwirpDeps(ctx context.Context) error {

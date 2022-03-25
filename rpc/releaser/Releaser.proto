@@ -1,9 +1,9 @@
 syntax = "proto3";
 
 package cresta.releaser;
-option go_package = "github.com/cresta/cresta-releaser/rpc/releaser-server";
+option go_package = "github.com/cresta/cresta-releaser/rpc/releaser";
 
-service ReleaserServer {
+service Releaser {
   rpc GetAllApplicationStatus(GetAllApplicationStatusRequest) returns (GetAllApplicationStatusResponse);
 }
 
