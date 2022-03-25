@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"github.com/cresta/zapctx"
-	"go.uber.org/zap"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/cresta/zapctx"
+	"go.uber.org/zap"
 )
 
 func MustReturn[T any](v T, err error) T {

@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
+	"os"
+
 	"github.com/cresta/cresta-releaser/internal/logging"
 	"github.com/cresta/cresta-releaser/internal/managedgitrepo"
 	"github.com/cresta/cresta-releaser/internal/releaserserver"
 	"github.com/cresta/cresta-releaser/releaser"
 	releaser_protobuf "github.com/cresta/cresta-releaser/rpc/releaser"
 	"go.uber.org/zap"
-	"net/http"
-	"os"
 )
 
 func main() {

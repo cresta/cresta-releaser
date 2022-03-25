@@ -3,9 +3,10 @@ package managedgitrepo
 import (
 	"context"
 	"fmt"
-	"github.com/cresta/cresta-releaser/releaser"
 	"net/url"
 	"path/filepath"
+
+	"github.com/cresta/cresta-releaser/releaser"
 )
 
 type Repo struct {
