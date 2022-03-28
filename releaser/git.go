@@ -36,9 +36,8 @@ func (g *GitCli) ResetToOriginalBranch(ctx context.Context) error {
 	if err := g.FetchAllFromRemote(ctx); err != nil {
 		return fmt.Errorf("failed to fetch all from remote: %w", err)
 	}
-	if err := pipe.Shell("git branch -D origin/master").Run(ctx); err != nil {
-		return fmt.Errorf("failed to delete origin/master: %w", err)
-	}
+	// It's ok to fail here, because we don't care if the branch doesn't exist
+	_ = pipe.Shell("git branch -D master").Run(ctx)
 	if err := pipe.Shell("git checkout -b master origin/master").Run(ctx); err != nil {
 		return fmt.Errorf("failed to checkout master: %w", err)
 	}
