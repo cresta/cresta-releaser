@@ -1,0 +1,17 @@
+apiVersion: v1
+entries:
+  cresta-releaser:
+  - apiVersion: v2
+    appVersion: 1.16.0
+    created: "2022-03-28T20:06:42.400626859Z"
+    description: A Helm chart for Kubernetes
+    digest: fa42420a068f47871c52dbe014983f92d973c1d63d4f1a2f954c0eb92b3e2c88
+    maintainers:
+    - name: Cresta
+      url: https://github.com/cresta/cresta-releaser
+    name: cresta-releaser
+    type: application
+    urls:
+    - https://github.com/cresta/cresta-releaser/releases/download/cresta-releaser-0.1.1/cresta-releaser-0.1.1.tgz
+    version: 0.1.1
+generated: "2022-03-28T20:06:42.400645859Z"
