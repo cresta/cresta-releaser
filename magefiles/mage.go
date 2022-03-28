@@ -20,11 +20,11 @@ func init() {
 	env.Default("DOCKER_MUTABLE_TAGS", "true")
 }
 
-func BuildTwirp(ctx context.Context) error {
+func BuildTwirp(ctx context.Context) error { //nolint:golint,deadcode
 	return pipe.Shell("protoc --proto_path=. --go_out=. --go_opt=module=github.com/cresta/cresta-releaser --twirp_out=. --twirp_opt=module=github.com/cresta/cresta-releaser rpc/releaser/Releaser.proto").Run(ctx)
 }
 
-func InstallTwirpDeps(ctx context.Context) error {
+func InstallTwirpDeps(ctx context.Context) error { //nolint:golint,deadcode
 	if err := pipe.Shell("go install github.com/twitchtv/twirp/protoc-gen-twirp").Run(ctx); err != nil {
 		return err
 	}

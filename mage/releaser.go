@@ -147,7 +147,11 @@ func ForcePushCurrentBranch(ctx context.Context) error {
 
 // PullRequestCurrent creates a pull request for the current branch
 func PullRequestCurrent(ctx context.Context) error {
-	return MustGetInstance().PullRequestCurrent(ctx)
+	pr, err := MustGetInstance().PullRequestCurrent(ctx)
+	if err != nil {
+		return err
+	}
+	return getOutputFormat().WriteObject(os.Stdout, pr)
 }
 
 // CheckForPROnCurrentBranch will check if there is a pull request on the current branch.  Returns 0 if there is no
