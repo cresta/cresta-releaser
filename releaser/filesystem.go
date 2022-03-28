@@ -22,6 +22,11 @@ type FileSystem interface {
 	FileExists(dir string, name string) (bool, error)
 }
 
+func IsGitCheckout(fs FileSystem, dir string) bool {
+	exists, err := fs.DirectoryExists(filepath.Join(dir, ".git"))
+	return exists && err == nil
+}
+
 func FilesAtRoot(fs FileSystem, dir string) ([]File, error) {
 	var ret []File
 	files, err := fs.FilesInsideDirectory(dir)

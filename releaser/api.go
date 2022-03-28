@@ -25,6 +25,10 @@ type FromCommandLine struct {
 	Logger *zap.Logger
 }
 
+func (f *FromCommandLine) AreThereUncommittedChanges(ctx context.Context) (bool, error) {
+	return f.Git.AreThereUncommittedChanges(ctx)
+}
+
 func CheckForPRForRelease(ctx context.Context, a Api, application string, release string) (int64, error) {
 	return a.CheckForPRForBranch(ctx, DefaultBranchNameForRelease(application, release))
 }
@@ -153,23 +157,24 @@ func (f *FromCommandLine) GithubWhoami(ctx context.Context) (string, error) {
 	return f.Github.Self(ctx)
 }
 
-func (f *FromCommandLine) PullRequestCurrent(ctx context.Context) error {
+func (f *FromCommandLine) PullRequestCurrent(ctx context.Context) (int64, error) {
 	currentBranch, err := f.Git.CurrentBranchName(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get current branch: %w", err)
+		return 0, fmt.Errorf("failed to get current branch: %w", err)
 	}
 	owner, repo, err := f.Git.GetRemoteAsGithubRepo(ctx)
 	if err != nil {
-		return fmt.Errorf("unable to parse remote URL: %w", err)
+		return 0, fmt.Errorf("unable to parse remote URL: %w", err)
 	}
 	info, err := f.Github.RepositoryInfo(ctx, owner, repo)
 	if err != nil {
-		return fmt.Errorf("unable to get repository info for %s/%s: %w", owner, repo, err)
+		return 0, fmt.Errorf("unable to get repository info for %s/%s: %w", owner, repo, err)
 	}
-	if err := f.Github.CreatePullRequest(ctx, info.Repository.ID, string(info.Repository.DefaultBranchRef.Name), currentBranch, "master", "Update release notes"); err != nil {
-		return fmt.Errorf("unable to create pull request: %w", err)
+	if prNum, err := f.Github.CreatePullRequest(ctx, info.Repository.ID, string(info.Repository.DefaultBranchRef.Name), currentBranch, fmt.Sprintf("PR from cresta-releaser for %s", currentBranch), "Deployment"); err != nil {
+		return 0, fmt.Errorf("unable to create pull request: %w", err)
+	} else {
+		return prNum, nil
 	}
-	return nil
 }
 
 func (f *FromCommandLine) ForcePushCurrentBranch(ctx context.Context) error {
@@ -193,8 +198,12 @@ func DefaultBranchNameForRelease(application string, release string) string {
 }
 
 func (f *FromCommandLine) FreshGitBranch(ctx context.Context, application string, release string, forcedName string) error {
-	if err := f.Git.VerifyFresh(ctx); err != nil {
-		return fmt.Errorf("Git is not clean: %w", err)
+	f.Logger.Debug("Creating new branch for release")
+	defer f.Logger.Debug("Created new branch for release")
+	if untrackedFiles, err := f.Git.AreThereUncommittedChanges(ctx); err != nil {
+		return fmt.Errorf("failed to check for uncommitted changes: %w", err)
+	} else if untrackedFiles {
+		return fmt.Errorf("there are uncommitted changes")
 	}
 	branchName := forcedName
 	if branchName == "" {
@@ -300,6 +309,8 @@ func (c *ReleaseConfig) mergeFrom(r ReleaseConfig) {
 }
 
 func (f *FromCommandLine) PreviewRelease(application string, release string) (oldRelease *Release, newRelease *Release, err error) {
+	f.Logger.Debug("previewing release")
+	defer f.Logger.Debug("previewed release")
 	releases, err := f.ListReleases(application)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to list releases: %w", err)
@@ -572,11 +583,13 @@ type Api interface {
 	FreshGitBranch(ctx context.Context, application string, release string, forcedName string) error
 	// CommitForRelease will commit the release to the Git branch.  It assumes you've already called ApplyRelease
 	CommitForRelease(ctx context.Context, application string, release string) error
+	// AreThereUncommittedChanges will check if there are any uncommitted changes in the Git branch.
+	AreThereUncommittedChanges(ctx context.Context) (bool, error)
 	// ForcePushCurrentBranch will force push the current branch to the remote repository as a branch with the same name.
 	// Fails on branches master or main.
 	ForcePushCurrentBranch(ctx context.Context) error
 	// PullRequestCurrent creates a pull request for the current branch
-	PullRequestCurrent(ctx context.Context) error
+	PullRequestCurrent(ctx context.Context) (int64, error)
 	// CheckForPROnCurrentBranch will check if there is a pull request on the current branch.  Returns 0 if there is no
 	// PR, otherwise the PR number
 	CheckForPROnCurrentBranch(ctx context.Context) (int64, error)

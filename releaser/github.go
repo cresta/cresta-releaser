@@ -20,7 +20,7 @@ import (
 type GitHub interface {
 	// CreatePullRequest creates a PR of your current branch.  It assumes there is a remote branch with the
 	// exact same name.  It will fail if you're already on master or main.
-	CreatePullRequest(ctx context.Context, remoteRepositoryId graphql.ID, baseRefName string, remoteRefName string, title string, body string) error
+	CreatePullRequest(ctx context.Context, remoteRepositoryId graphql.ID, baseRefName string, remoteRefName string, title string, body string) (int64, error)
 	// RepositoryInfo returns special information about a remote repository
 	RepositoryInfo(ctx context.Context, owner string, name string) (*RepositoryInfo, error)
 	// FindPRForBranch returns the PR for this branch
@@ -50,6 +50,9 @@ type createPullRequest struct {
 	CreatePullRequest struct {
 		// Note: This is unused, but the library requires at least something to be read for the mutation to happen
 		ClientMutationID githubv4.ID
+		PullRequest      struct {
+			Number githubv4.Int
+		}
 	} `graphql:"createPullRequest(input: $input)"`
 }
 
@@ -320,7 +323,7 @@ func (g *GithubGraphqlAPI) Self(ctx context.Context) (string, error) {
 	return string(q.Viewer.Login), nil
 }
 
-func (g *GithubGraphqlAPI) CreatePullRequest(ctx context.Context, remoteRepositoryId graphql.ID, baseRefName string, remoteRefName string, title string, body string) error {
+func (g *GithubGraphqlAPI) CreatePullRequest(ctx context.Context, remoteRepositoryId graphql.ID, baseRefName string, remoteRefName string, title string, body string) (int64, error) {
 	g.Logger.Debug("creating pull request", zap.Any("remoteRepositoryId", remoteRepositoryId), zap.String("baseRefName", baseRefName), zap.String("remoteRefName", remoteRefName), zap.String("title", title), zap.String("body", body))
 	defer g.Logger.Debug("done creating pull request")
 	var ret createPullRequest
@@ -331,9 +334,9 @@ func (g *GithubGraphqlAPI) CreatePullRequest(ctx context.Context, remoteReposito
 		Title:        githubv4.String(title),
 		Body:         githubv4.NewString(githubv4.String(body)),
 	}, nil); err != nil {
-		return fmt.Errorf("failed to create pull request: %w", err)
+		return 0, fmt.Errorf("failed to create pull request: %w", err)
 	}
-	return nil
+	return int64(ret.CreatePullRequest.PullRequest.Number), nil
 }
 
 func (g *GithubGraphqlAPI) RepositoryInfo(ctx context.Context, owner string, name string) (*RepositoryInfo, error) {

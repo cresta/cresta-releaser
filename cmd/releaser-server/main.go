@@ -17,6 +17,7 @@ import (
 func main() {
 	ctx := context.Background()
 	logger := MustReturn(logging.SetupLogging(envWithDefault("LOG_LEVEL", "info")))
+	logger.Info(ctx, "Starting application")
 	api := MustReturn(releaser.NewFromCommandLine(ctx, logger.Unwrap(ctx), nil))
 	repo := MustReturn(managedgitrepo.NewRepo(ctx, envWithDefault("REPO_DISK_LOCATION", "/tmp/repo"), os.Getenv("REPO_URL"), api.Fs, api.Github, api.Git))
 	serverImpl := MustReturn(releaserserver.NewServer(ctx, logger, api, repo))

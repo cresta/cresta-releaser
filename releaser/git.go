@@ -11,7 +11,7 @@ import (
 )
 
 type Git interface {
-	VerifyFresh(ctx context.Context) error
+	AreThereUncommittedChanges(ctx context.Context) (bool, error)
 	CheckoutNewBranch(ctx context.Context, branch string) error
 	CommitAll(ctx context.Context, message string) error
 	CurrentBranchName(ctx context.Context) (string, error)
@@ -21,17 +21,58 @@ type Git interface {
 	ResetClean(ctx context.Context) error
 	FetchAllFromRemote(ctx context.Context) error
 	ResetToOriginalBranch(ctx context.Context) error
+	ForceDeleteLocalBranch(ctx context.Context, branch string) error
+	ChangeOrigin(ctx context.Context, newOrigin string) error
+	DoesBranchExist(ctx context.Context, branch string) (bool, error)
 }
 
 type GitCli struct {
 	Logger *zap.Logger
 }
 
-func (g *GitCli) ResetToOriginalBranch(ctx context.Context) error {
-	if err := pipe.Shell("git checkout master").Run(ctx); err != nil {
-		return fmt.Errorf("failed to checkout master: %w", err)
+func (g *GitCli) DoesBranchExist(ctx context.Context, branch string) (bool, error) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := pipe.NewPiped("git", "show-ref", "--quiet", "--verify", "refs/heads/"+branch).Execute(ctx, nil, &stdout, &stderr)
+	if err != nil {
+		if strings.Contains(stderr.String(), "fatal:") {
+			return false, fmt.Errorf("unable to check if branch exists: %w", err)
+		}
+		return false, nil
 	}
-	return g.ResetClean(ctx)
+	return true, nil
+}
+
+func (g *GitCli) ForceDeleteLocalBranch(ctx context.Context, branch string) error {
+	return pipe.NewPiped("git", "branch", "-D", branch).Run(ctx)
+}
+
+func (g *GitCli) ChangeOrigin(ctx context.Context, newOrigin string) error {
+	return pipe.NewPiped("git", "remote", "set-url", "origin", newOrigin).Run(ctx)
+}
+
+func (g *GitCli) ResetToOriginalBranch(ctx context.Context) error {
+	if err := g.FetchAllFromRemote(ctx); err != nil {
+		return fmt.Errorf("failed to fetch all from remote: %w", err)
+	}
+	currentBranch, err := g.CurrentBranchName(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current branch name: %w", err)
+	}
+	if currentBranch != "master" {
+		// Ignore error because we don't care if the branch doesn't exist
+		_ = pipe.Shell("git branch -D master").Run(ctx)
+		if err := pipe.Shell("git checkout -b master origin/master").Run(ctx); err != nil {
+			return fmt.Errorf("failed to checkout master: %w", err)
+		}
+	}
+	if err := g.ResetClean(ctx); err != nil {
+		return fmt.Errorf("failed to reset clean: %w", err)
+	}
+	if err := pipe.Shell("git reset --hard origin/master").Run(ctx); err != nil {
+		return fmt.Errorf("failed to reset to origin/master: %w", err)
+	}
+	return nil
 }
 
 func (g *GitCli) FetchAllFromRemote(ctx context.Context) error {
@@ -39,8 +80,8 @@ func (g *GitCli) FetchAllFromRemote(ctx context.Context) error {
 }
 
 func (g *GitCli) ResetClean(ctx context.Context) error {
-	if err := pipe.Shell("Git clean -ffdx").Run(ctx); err != nil {
-		return fmt.Errorf("Git clean failed: %w", err)
+	if err := pipe.Shell("git clean -ffdx").Run(ctx); err != nil {
+		return fmt.Errorf("git clean failed: %w", err)
 	}
 	return pipe.Shell("git reset --hard").Run(ctx)
 }
@@ -98,25 +139,28 @@ func (g *GitCli) ForcePushHead(ctx context.Context, repository string, ref strin
 	return nil
 }
 
-func (g *GitCli) VerifyFresh(ctx context.Context) error {
+func (g *GitCli) AreThereUncommittedChanges(ctx context.Context) (bool, error) {
+	g.Logger.Debug("AreThereUncommittedChanges")
+	defer g.Logger.Debug("AreThereUncommittedChanges done")
 	var stdout, stderr bytes.Buffer
 	err := pipe.Shell("git status --short").Execute(ctx, nil, &stdout, &stderr)
+	g.Logger.Debug("ran git status", zap.String("stdout", stdout.String()), zap.String("stderr", stderr.String()))
 	if err != nil {
-		return fmt.Errorf("Git status failed: %w", err)
+		return false, fmt.Errorf("git status failed: %w", err)
 	}
 	if stdout.Len() > 0 {
-		return fmt.Errorf("checkout is not fresh: %s", stdout.String())
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 func (g *GitCli) CommitAll(ctx context.Context, message string) error {
 	var stdout, stderr bytes.Buffer
 	if err := pipe.Shell("git add .").Execute(ctx, nil, &stdout, &stderr); err != nil {
-		return fmt.Errorf("Git add failed (%s %s): %w", stdout.String(), stderr.String(), err)
+		return fmt.Errorf("git add failed (%s %s): %w", stdout.String(), stderr.String(), err)
 	}
 	if err := pipe.NewPiped("git", "commit", "-a", "-m", message).Execute(ctx, nil, &stdout, &stderr); err != nil {
-		return fmt.Errorf("Git commit failed (%s %s): %w", stdout.String(), stderr.String(), err)
+		return fmt.Errorf("git commit failed (%s %s): %w", stdout.String(), stderr.String(), err)
 	}
 	return nil
 }
@@ -125,7 +169,7 @@ func (g *GitCli) CheckoutNewBranch(ctx context.Context, branch string) error {
 	var stdout, stderr bytes.Buffer
 	err := pipe.NewPiped("git", "checkout", "-b", branch, "origin/master").Execute(ctx, nil, &stdout, &stderr)
 	if err != nil {
-		return fmt.Errorf("Git checkout failed: %w", err)
+		return fmt.Errorf("git checkout failed (%s:%s): %w", stdout.String(), stderr.String(), err)
 	}
 	return nil
 }

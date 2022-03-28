@@ -14,7 +14,8 @@ COPY go.sum /work
 RUN go mod download
 RUN go mod verify
 COPY . /work
-RUN GOBUILD_MAIN_DIRECTORY=./cmd/releaser-server mage go:build
+RUN go build -o main ./cmd/releaser-server/*.go
+#RUN GOBUILD_MAIN_DIRECTORY=./cmd/releaser-server mage go:build
 # Create appuser
 ENV USER=appuser
 ENV UID=10001

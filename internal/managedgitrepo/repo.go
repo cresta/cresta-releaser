@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 
 	"github.com/cresta/cresta-releaser/releaser"
@@ -25,10 +26,42 @@ func NewRepo(ctx context.Context, diskLocation string, url string, fs releaser.F
 		Gh:           gh,
 		G:            g,
 	}
+	if releaser.IsGitCheckout(r.Fs, diskLocation) {
+		return r, r.ResetExistingToOrigin(ctx)
+	}
 	if err := r.Clone(ctx); err != nil {
 		return nil, fmt.Errorf("failed to clone repo: %w", err)
 	}
 	return r, nil
+}
+
+func (r *Repo) ResetExistingToOrigin(ctx context.Context) error {
+	cloneURL, err := r.urlWithToken(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get clone url: %w", err)
+	}
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current dir: %w", err)
+	}
+	defer func() {
+		if err := os.Chdir(currentDir); err != nil {
+			panic(err)
+		}
+	}()
+	if os.Chdir(r.DiskLocation) != nil {
+		return fmt.Errorf("failed to chdir to repo: %w", err)
+	}
+	if err := r.G.ChangeOrigin(ctx, cloneURL); err != nil {
+		return fmt.Errorf("failed to change origin: %w", err)
+	}
+	if err := r.G.ResetClean(ctx); err != nil {
+		return fmt.Errorf("failed to reset clean: %w", err)
+	}
+	if err := r.G.ResetToOriginalBranch(ctx); err != nil {
+		return fmt.Errorf("failed to reset to original branch: %w", err)
+	}
+	return nil
 }
 
 func (r *Repo) Clone(ctx context.Context) error {

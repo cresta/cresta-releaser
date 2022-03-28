@@ -2,6 +2,7 @@ package commands
 
 import (
 	"github.com/spf13/cobra"
+	"os"
 )
 
 var githubPrCmd = &cobra.Command{
@@ -9,8 +10,9 @@ var githubPrCmd = &cobra.Command{
 	Short:   "Pull request of curent branch",
 	Example: "cresta-releaser github pr",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cobra.CheckErr(api.PullRequestCurrent(cmd.Context()))
-		return nil
+		pr, err := api.PullRequestCurrent(cmd.Context())
+		cobra.CheckErr(err)
+		return getOutputFormat().WriteObject(os.Stdout, pr)
 	},
 	Args: cobra.NoArgs,
 }
