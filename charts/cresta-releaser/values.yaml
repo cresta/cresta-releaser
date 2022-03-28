@@ -46,6 +46,13 @@ repoURL: ""
 repoDiskLocation: "/repo"
 listenAddress: ":8080"
 
+github:
+  appId: ""
+  installId: ""
+  pemKeyPath: ""
+  token: ""
+  mountSecretName: ""
+
 ingress:
   enabled: false
   className: ""

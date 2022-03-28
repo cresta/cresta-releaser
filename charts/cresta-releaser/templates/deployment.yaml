@@ -42,6 +42,14 @@ spec:
               value: {{ .Values.repoDiskLocation }}
             - name: LISTEN_ADDR
               value: {{ .Values.listenAddress }}
+            - name: GITHUB_APP_ID
+              value: {{ .Values.github.appId }}
+            - name: GITHUB_INSTALLATION_ID
+              value: {{ .Values.github.installId }}
+            - name: GITHUB_PEM_KEY_LOC
+              value: {{ .Values.github.pemKeyPath }}
+            - name: GITHUB_TOKEN
+              value: {{ .Values.github.token }}
           ports:
             - name: http
               containerPort: 80
@@ -59,6 +67,11 @@ spec:
               port: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.git.mountSecretName }}
+          - mountPath: /git
+            name: git-secret
+            readOnly: true
+          {{- end }}
       volumes:
         - name: repo-checkout
           emptyDir: {}
@@ -74,3 +87,9 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      { { - if .Values.git.mountSecretName } }
+      - name: git-secret
+        secret:
+          defaultMode: 256
+          secretName: { { .Values.git.mountSecretName } }
+      { { - end } }
