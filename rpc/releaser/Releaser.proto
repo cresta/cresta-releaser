@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package cresta.releaser;
+option go_package = "github.com/cresta/cresta-releaser/rpc/releaser";
+
+service Releaser {
+  rpc GetAllApplicationStatus(GetAllApplicationStatusRequest) returns (GetAllApplicationStatusResponse);
+  rpc PushPromotion(PushPromotionRequest) returns (PushPromotionResponse);
+}
+
+message PushPromotionRequest {
+  string application_name = 1;
+  string release_name = 2;
+}
+
+message PushPromotionResponse {
+  enum Status {
+    UNKNOWN = 0;
+    EXISTING_PULL_REQUEST = 1;
+    NEW_PULL_REQUEST = 2;
+    NO_CHANGES = 3;
+  }
+  Status status = 1;
+  int64 pull_request_id = 2;
+}
+
+message GetAllApplicationStatusRequest {
+}
+
+message GetAllApplicationStatusResponse {
+  repeated ApplicationStatus application_status = 1;
+}
+
+message ApplicationStatus {
+  string name = 1;
+  repeated ReleaseStatus release_status = 2;
+}
+
+message ReleaseStatus {
+  string name = 1;
+  enum Status {
+    UNKNOWN = 0;
+    PENDING = 1;
+    RELEASED = 2;
+  }
+  Status status = 2;
+  int64 pr_number = 3;
+}
