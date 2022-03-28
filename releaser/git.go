@@ -149,9 +149,9 @@ func (g *GitCli) AreThereUncommittedChanges(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("git status failed: %w", err)
 	}
 	if stdout.Len() > 0 {
-		return false, nil
+		return true, nil
 	}
-	return true, nil
+	return false, nil
 }
 
 func (g *GitCli) CommitAll(ctx context.Context, message string) error {

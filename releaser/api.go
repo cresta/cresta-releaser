@@ -200,9 +200,9 @@ func DefaultBranchNameForRelease(application string, release string) string {
 func (f *FromCommandLine) FreshGitBranch(ctx context.Context, application string, release string, forcedName string) error {
 	f.Logger.Debug("Creating new branch for release")
 	defer f.Logger.Debug("Created new branch for release")
-	if okToContinue, err := f.Git.AreThereUncommittedChanges(ctx); err != nil {
+	if untrackedFiles, err := f.Git.AreThereUncommittedChanges(ctx); err != nil {
 		return fmt.Errorf("failed to check for uncommitted changes: %w", err)
-	} else if !okToContinue {
+	} else if untrackedFiles {
 		return fmt.Errorf("there are uncommitted changes")
 	}
 	branchName := forcedName
