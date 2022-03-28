@@ -11,6 +11,8 @@ import (
 	_ "github.com/cresta/magehelper/gobuild"
 	// mage:import docker
 	_ "github.com/cresta/magehelper/docker"
+	// mage:import ghcr
+	_ "github.com/cresta/magehelper/docker/registry/ghcr"
 	"github.com/cresta/magehelper/pipe"
 )
 
