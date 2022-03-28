@@ -33,7 +33,13 @@ func (g *GitCli) ChangeOrigin(ctx context.Context, newOrigin string) error {
 }
 
 func (g *GitCli) ResetToOriginalBranch(ctx context.Context) error {
-	if err := pipe.Shell("git checkout master").Run(ctx); err != nil {
+	if err := g.FetchAllFromRemote(ctx); err != nil {
+		return fmt.Errorf("failed to fetch all from remote: %w", err)
+	}
+	if err := pipe.Shell("git branch -D origin/master").Run(ctx); err != nil {
+		return fmt.Errorf("failed to delete origin/master: %w", err)
+	}
+	if err := pipe.Shell("git checkout -b master origin/master").Run(ctx); err != nil {
 		return fmt.Errorf("failed to checkout master: %w", err)
 	}
 	return g.ResetClean(ctx)
