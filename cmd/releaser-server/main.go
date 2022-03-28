@@ -23,9 +23,11 @@ func main() {
 	serverImpl := MustReturn(releaserserver.NewServer(ctx, logger, api, repo))
 	twirpServer := releaser_protobuf.NewReleaserServer(serverImpl)
 	Must(os.Chdir(envWithDefault("REPO_DISK_LOCATION", "/tmp/repo")))
+	mux := muxWithHealthCheck()
+	mux.Handle("/", twirpServer)
 	httpServer := http.Server{
 		Addr:    envWithDefault("LISTEN_ADDR", ":8080"),
-		Handler: twirpServer,
+		Handler: mux,
 	}
 	killOnSigTerm(ctx, logger, &httpServer)
 	logger.Info(ctx, "starting server", zap.String("addr", httpServer.Addr))

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	mux2 "github.com/gorilla/mux"
 	"net/http"
 	"os"
 	"os/signal"
@@ -30,6 +31,14 @@ func envWithDefault(s string, defaultVal string) string {
 	} else {
 		return ret
 	}
+}
+
+func muxWithHealthCheck() *mux2.Router {
+	mux := mux2.NewRouter()
+	mux.Handle("/healthz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	return mux
 }
 
 func killOnSigTerm(ctx context.Context, logger *zapctx.Logger, httpServer *http.Server) {
