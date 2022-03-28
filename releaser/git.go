@@ -11,7 +11,7 @@ import (
 )
 
 type Git interface {
-	VerifyFresh(ctx context.Context) error
+	AreThereUncommittedChanges(ctx context.Context) (bool, error)
 	CheckoutNewBranch(ctx context.Context, branch string) error
 	CommitAll(ctx context.Context, message string) error
 	CurrentBranchName(ctx context.Context) (string, error)
@@ -21,10 +21,15 @@ type Git interface {
 	ResetClean(ctx context.Context) error
 	FetchAllFromRemote(ctx context.Context) error
 	ResetToOriginalBranch(ctx context.Context) error
+	ChangeOrigin(ctx context.Context, newOrigin string) error
 }
 
 type GitCli struct {
 	Logger *zap.Logger
+}
+
+func (g *GitCli) ChangeOrigin(ctx context.Context, newOrigin string) error {
+	return pipe.NewPiped("git", "remote", "set-url", "origin", newOrigin).Run(ctx)
 }
 
 func (g *GitCli) ResetToOriginalBranch(ctx context.Context) error {
@@ -98,16 +103,16 @@ func (g *GitCli) ForcePushHead(ctx context.Context, repository string, ref strin
 	return nil
 }
 
-func (g *GitCli) VerifyFresh(ctx context.Context) error {
+func (g *GitCli) AreThereUncommittedChanges(ctx context.Context) (bool, error) {
 	var stdout, stderr bytes.Buffer
 	err := pipe.Shell("git status --short").Execute(ctx, nil, &stdout, &stderr)
 	if err != nil {
-		return fmt.Errorf("Git status failed: %w", err)
+		return false, fmt.Errorf("git status failed: %w", err)
 	}
 	if stdout.Len() > 0 {
-		return fmt.Errorf("checkout is not fresh: %s", stdout.String())
+		return false, nil
 	}
-	return nil
+	return true, nil
 }
 
 func (g *GitCli) CommitAll(ctx context.Context, message string) error {
