@@ -31,6 +31,16 @@ func (s *Server) PushPromotion(ctx context.Context, request *releaser_protobuf.P
 			PullRequestId: pr,
 		}, nil
 	}
+	if err := s.Repo.G.ResetToOriginalBranch(ctx); err != nil {
+		return nil, fmt.Errorf("failed to reset to original branch: %w", err)
+	}
+	if exists, err := s.Repo.G.DoesBranchExist(ctx, branchName); err != nil {
+		return nil, fmt.Errorf("failed to check if branch %s exists: %w", branchName, err)
+	} else if exists {
+		if err := s.Repo.G.ForceDeleteLocalBranch(ctx, branchName); err != nil {
+			return nil, fmt.Errorf("failed to delete branch %s: %w", branchName, err)
+		}
+	}
 	if err := s.Api.FreshGitBranch(ctx, request.ApplicationName, request.ReleaseName, ""); err != nil {
 		return nil, fmt.Errorf("failed to create branch %s: %w", branchName, err)
 	}

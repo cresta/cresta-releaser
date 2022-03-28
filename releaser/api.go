@@ -198,6 +198,8 @@ func DefaultBranchNameForRelease(application string, release string) string {
 }
 
 func (f *FromCommandLine) FreshGitBranch(ctx context.Context, application string, release string, forcedName string) error {
+	f.Logger.Debug("Creating new branch for release")
+	defer f.Logger.Debug("Created new branch for release")
 	if okToContinue, err := f.Git.AreThereUncommittedChanges(ctx); err != nil {
 		return fmt.Errorf("failed to check for uncommitted changes: %w", err)
 	} else if !okToContinue {
@@ -307,6 +309,8 @@ func (c *ReleaseConfig) mergeFrom(r ReleaseConfig) {
 }
 
 func (f *FromCommandLine) PreviewRelease(application string, release string) (oldRelease *Release, newRelease *Release, err error) {
+	f.Logger.Debug("previewing release")
+	defer f.Logger.Debug("previewed release")
 	releases, err := f.ListReleases(application)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to list releases: %w", err)
