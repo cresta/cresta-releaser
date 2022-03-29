@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
-	mux2 "github.com/gorilla/mux"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+
+	releaser_protobuf "github.com/cresta/cresta-releaser/rpc/releaser"
+	mux2 "github.com/gorilla/mux"
 
 	"github.com/cresta/zapctx"
 	"go.uber.org/zap"
@@ -33,11 +35,12 @@ func envWithDefault(s string, defaultVal string) string {
 	}
 }
 
-func muxWithHealthCheck() *mux2.Router {
+func muxWithHealthCheckForTwirp(twirpServer releaser_protobuf.TwirpServer) *mux2.Router {
 	mux := mux2.NewRouter()
 	mux.Handle("/healthz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
+	mux.NewRoute().PathPrefix(twirpServer.PathPrefix()).Handler(twirpServer).Methods(http.MethodPost)
 	return mux
 }
 
