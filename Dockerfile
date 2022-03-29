@@ -11,7 +11,7 @@ RUN go mod download
 RUN go mod verify
 COPY . /work
 RUN go build -o main ./cmd/releaser-server/*.go
-COPY main /releaser
+RUN mv main /releaser
 # Create appuser
 ENV USER=appuser
 ENV UID=10001
