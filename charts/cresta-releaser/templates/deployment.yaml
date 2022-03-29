@@ -36,35 +36,35 @@ spec:
           env:
             {{- if .Values.logLevel }}
             - name: LOG_LEVEL
-              value: {{ .Values.logLevel }}
+              value: {{ .Values.logLevel | quote }}
             {{- end }}
             {{- if .Values.repoURL }}
             - name: REPO_NAME
-              value: {{ .Values.repoURL }}
+              value: {{ .Values.repoURL | quote }}
             {{- end }}
             {{- if .Values.repoDiskLocation }}
             - name: REPO_DISK_LOCATION
-              value: {{ .Values.repoDiskLocation }}
+              value: {{ .Values.repoDiskLocation | quote }}
             {{- end }}
             {{- if .Values.listenAddress }}
             - name: LISTEN_ADDR
-              value: {{ .Values.listenAddress }}
+              value: {{ .Values.listenAddress | quote}}
             {{- end }}
             {{- if .Values.github.appId }}
             - name: GITHUB_APP_ID
-              value: {{ .Values.github.appId }}
+              value: {{ .Values.github.appId | quote}}
             {{- end }}
             {{- if .Values.github.installId }}
             - name: GITHUB_INSTALLATION_ID
-              value: {{ .Values.github.installId }}
+              value: {{ .Values.github.installId | quote}}
             {{- end }}
             {{- if .Values.github.pemKeyPath }}
             - name: GITHUB_PEM_KEY_LOC
-              value: {{ .Values.github.pemKeyPath }}
+              value: {{ .Values.github.pemKeyPath | quote}}
             {{- end }}
             {{- if .Values.github.token }}
             - name: GITHUB_TOKEN
-              value: {{ .Values.github.token }}
+              value: {{ .Values.github.token | quote}}
             {{- end }}
           ports:
             - name: http
