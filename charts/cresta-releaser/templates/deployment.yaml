@@ -57,6 +57,11 @@ spec:
           volumeMounts:
             - mountPath: /repo
               name: repo-checkout
+            {{- if .Values.github.mountSecretName }}
+            - mountPath: /git
+              name: git-secret
+              readOnly: true
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -67,14 +72,15 @@ spec:
               port: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.github.mountSecretName }}
-          - mountPath: /git
-            name: git-secret
-            readOnly: true
-          {{- end }}
       volumes:
         - name: repo-checkout
           emptyDir: {}
+        {{- if .Values.github.mountSecretName }}
+        - name: git-secret
+          secret:
+            defaultMode: 256
+            secretName: {{ .Values.github.mountSecretName }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -86,10 +92,4 @@ spec:
       {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- if .Values.github.mountSecretName }}
-      - name: git-secret
-        secret:
-          defaultMode: 256
-          secretName: {{ .Values.github.mountSecretName }}
       {{- end }}
