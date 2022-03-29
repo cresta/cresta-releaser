@@ -87,9 +87,9 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      { { - if .Values.github.mountSecretName } }
+      {{- if .Values.github.mountSecretName }}
       - name: git-secret
         secret:
           defaultMode: 256
-          secretName: { { .Values.github.mountSecretName } }
-      { { - end } }
+          secretName: {{ .Values.github.mountSecretName }}
+      {{- end }}
