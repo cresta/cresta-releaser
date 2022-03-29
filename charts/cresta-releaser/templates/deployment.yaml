@@ -39,7 +39,7 @@ spec:
               value: {{ .Values.logLevel | quote }}
             {{- end }}
             {{- if .Values.repoURL }}
-            - name: REPO_NAME
+            - name: REPO_URL
               value: {{ .Values.repoURL | quote }}
             {{- end }}
             {{- if .Values.repoDiskLocation }}
