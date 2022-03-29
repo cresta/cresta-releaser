@@ -67,7 +67,7 @@ spec:
               port: http
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.git.mountSecretName }}
+          {{- if .Values.github.mountSecretName }}
           - mountPath: /git
             name: git-secret
             readOnly: true
@@ -87,9 +87,9 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      { { - if .Values.git.mountSecretName } }
+      { { - if .Values.github.mountSecretName } }
       - name: git-secret
         secret:
           defaultMode: 256
-          secretName: { { .Values.git.mountSecretName } }
+          secretName: { { .Values.github.mountSecretName } }
       { { - end } }
