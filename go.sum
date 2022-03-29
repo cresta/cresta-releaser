@@ -332,6 +332,8 @@ github.com/sergi/go-diff v1.1.0/go.mod h1:STckp+ISIX8hZLjrqAeVduY0gWCT9IjLuqbuNX
 github.com/sergi/go-diff v1.2.0 h1:XU+rvMAioB0UC3q1MFrIQy4Vo5/4VsRDQQXHsEya6xQ=
 github.com/sergi/go-diff v1.2.0/go.mod h1:STckp+ISIX8hZLjrqAeVduY0gWCT9IjLuqbuNXdaHfM=
 github.com/sethvargo/go-githubactions v0.5.0/go.mod h1:ugCoIFQjs7HxIwwYiY7ty6H9T+7Z4ey481HxqA3VRKE=
+github.com/sethvargo/go-githubactions v0.5.3 h1:moF/bzlaUUFAz8lu4/xnDQ5NPYoov5RvsINNLsprnr8=
+github.com/sethvargo/go-githubactions v0.5.3/go.mod h1:ugCoIFQjs7HxIwwYiY7ty6H9T+7Z4ey481HxqA3VRKE=
 github.com/shurcooL/githubv4 v0.0.0-20220115235240-a14260e6f8a2 h1:82EIpiGB79OIPgSGa63Oj4Ipf+YAX1c6A9qjmEYoRXc=
 github.com/shurcooL/githubv4 v0.0.0-20220115235240-a14260e6f8a2/go.mod h1:hAF0iLZy4td2EX+/8Tw+4nodhlMrwN3HupfaXj3zkGo=
 github.com/shurcooL/graphql v0.0.0-20200928012149-18c5c3165e3a h1:KikTa6HtAK8cS1qjvUvvq4QO21QnwC+EfvB+OAuZ/ZU=
