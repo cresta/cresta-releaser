@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/cresta/magehelper/pipe"
 	"go.uber.org/zap"
@@ -24,10 +26,81 @@ type Git interface {
 	ForceDeleteLocalBranch(ctx context.Context, branch string) error
 	ChangeOrigin(ctx context.Context, newOrigin string) error
 	DoesBranchExist(ctx context.Context, branch string) (bool, error)
+	IsAuthorConfigured(ctx context.Context) (bool, error)
+	SetLocalAuthor(ctx context.Context, name string, email string) error
+	ForceRemoteRefresh(ctx context.Context) error
+}
+
+type refreshInterval struct {
+	triggerAt time.Time
+	interval  time.Duration
+	mu        sync.RWMutex
+}
+
+func (i *refreshInterval) Execute(ctx context.Context, f func(ctx context.Context) error) error {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	if time.Now().Before(i.triggerAt) {
+		return nil
+	}
+	if err := f(ctx); err != nil {
+		return fmt.Errorf("failed to execute refresh interval: %w", err)
+	}
+	interval := i.interval
+	if interval == 0 {
+		interval = time.Minute
+	}
+	i.triggerAt = time.Now().Add(interval)
+	return nil
+}
+
+func (i *refreshInterval) AlwaysExecute(ctx context.Context, f func(ctx context.Context) error) error {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	if err := f(ctx); err != nil {
+		return fmt.Errorf("failed to execute refresh interval: %w", err)
+	}
+	interval := i.interval
+	if interval == 0 {
+		interval = time.Minute
+	}
+	i.triggerAt = time.Now().Add(interval)
+	return nil
 }
 
 type GitCli struct {
-	Logger *zap.Logger
+	Logger       *zap.Logger
+	fetchRefresh refreshInterval
+}
+
+func (g *GitCli) ForceRemoteRefresh(ctx context.Context) error {
+	return g.refreshWithFunction(ctx, g.fetchRefresh.AlwaysExecute)
+}
+
+func (g *GitCli) refreshWithFunction(ctx context.Context, f func(context.Context, func(context.Context) error) error) error {
+	return f(ctx, func(ctx context.Context) error {
+		return pipe.Shell("git fetch --all -v").Run(ctx)
+	})
+}
+
+func (g *GitCli) IsAuthorConfigured(ctx context.Context) (bool, error) {
+	if err := pipe.Shell("git config --get user.name").Run(ctx); err != nil {
+		return false, err
+	}
+	if err := pipe.Shell("git config --get user.email").Run(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (g *GitCli) SetLocalAuthor(ctx context.Context, name string, email string) error {
+	if err := pipe.NewPiped("git", "config", "user.email", email).Run(ctx); err != nil {
+		return err
+	}
+	if err := pipe.NewPiped("git", "config", "user.name", name).Run(ctx); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (g *GitCli) DoesBranchExist(ctx context.Context, branch string) (bool, error) {
@@ -76,7 +149,7 @@ func (g *GitCli) ResetToOriginalBranch(ctx context.Context) error {
 }
 
 func (g *GitCli) FetchAllFromRemote(ctx context.Context) error {
-	return pipe.Shell("git fetch --all -v").Run(ctx)
+	return g.refreshWithFunction(ctx, g.fetchRefresh.Execute)
 }
 
 func (g *GitCli) ResetClean(ctx context.Context) error {

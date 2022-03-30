@@ -42,16 +42,22 @@ service:
 
 
 logLevel: "info"
-repoURL: ""
-repoDiskLocation: "/repo"
 listenAddress: ":8080"
+
+git:
+  url: ""
+  diskLocation: "/repo"
+  author:
+    name: "cresta-releaser"
+    email: "cresta-releaser@example.com"
+  mountSecretName: ""
+  refreshInterval: "1m"
 
 github:
   appId: ""
   installId: ""
   pemKeyPath: ""
   token: ""
-  mountSecretName: ""
 
 ingress:
   enabled: false

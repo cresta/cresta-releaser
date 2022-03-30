@@ -35,6 +35,18 @@ func NewRepo(ctx context.Context, diskLocation string, url string, fs releaser.F
 	return r, nil
 }
 
+func (r *Repo) VerifyOrSetAuthorInfo(ctx context.Context, name string, email string) error {
+	if isSet, err := r.G.IsAuthorConfigured(ctx); err != nil {
+		return fmt.Errorf("failed to check if author info is set: %w", err)
+	} else if isSet {
+		return nil
+	}
+	if err := r.G.SetLocalAuthor(ctx, name, email); err != nil {
+		return fmt.Errorf("failed to set author info: %w", err)
+	}
+	return nil
+}
+
 func (r *Repo) ResetExistingToOrigin(ctx context.Context) error {
 	cloneURL, err := r.urlWithToken(ctx)
 	if err != nil {

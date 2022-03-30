@@ -6,6 +6,13 @@ option go_package = "github.com/cresta/cresta-releaser/rpc/releaser";
 service Releaser {
   rpc GetAllApplicationStatus(GetAllApplicationStatusRequest) returns (GetAllApplicationStatusResponse);
   rpc PushPromotion(PushPromotionRequest) returns (PushPromotionResponse);
+  rpc RefreshRepository(RefreshRepositoryRequest) returns (RefreshRepositoryResponse);
+}
+
+message RefreshRepositoryRequest {
+}
+
+message RefreshRepositoryResponse {
 }
 
 message PushPromotionRequest {

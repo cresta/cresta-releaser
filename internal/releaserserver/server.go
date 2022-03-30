@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/cresta/cresta-releaser/internal/managedgitrepo"
 	"github.com/cresta/cresta-releaser/releaser"
@@ -17,6 +18,34 @@ type Server struct {
 	Api    releaser.Api
 	Repo   *managedgitrepo.Repo
 	mu     sync.RWMutex
+}
+
+func CronRefresh(ctx context.Context, s *Server, cronInterval time.Duration) {
+	if cronInterval == 0 {
+		s.Logger.Info("CronRefresh disabled")
+		return
+	}
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(cronInterval):
+				if _, err := s.RefreshRepository(ctx, nil); err != nil {
+					s.Logger.Error("failed to refresh repository", zap.Error(err))
+				}
+			}
+		}
+	}()
+}
+
+func (s *Server) RefreshRepository(ctx context.Context, _ *releaser_protobuf.RefreshRepositoryRequest) (*releaser_protobuf.RefreshRepositoryResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.Repo.G.ForceRemoteRefresh(ctx); err != nil {
+		return nil, fmt.Errorf("failed to refresh repository: %w", err)
+	}
+	return nil, nil
 }
 
 func (s *Server) PushPromotion(ctx context.Context, request *releaser_protobuf.PushPromotionRequest) (*releaser_protobuf.PushPromotionResponse, error) {

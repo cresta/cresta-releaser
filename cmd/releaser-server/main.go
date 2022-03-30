@@ -20,6 +20,7 @@ func main() {
 	logger.Info(ctx, "Starting application")
 	api := MustReturn(releaser.NewFromCommandLine(ctx, logger.Unwrap(ctx), nil))
 	repo := MustReturn(managedgitrepo.NewRepo(ctx, envWithDefault("REPO_DISK_LOCATION", "/tmp/repo"), os.Getenv("REPO_URL"), api.Fs, api.Github, api.Git))
+	Must(repo.VerifyOrSetAuthorInfo(ctx, os.Getenv("GIT_AUTHOR_NAME"), os.Getenv("GIT_AUTHOR_EMAIL")))
 	serverImpl := MustReturn(releaserserver.NewServer(ctx, logger, api, repo))
 	twirpServer := releaser_protobuf.NewReleaserServer(serverImpl)
 	Must(os.Chdir(envWithDefault("REPO_DISK_LOCATION", "/tmp/repo")))
@@ -28,9 +29,12 @@ func main() {
 		Addr:    envWithDefault("LISTEN_ADDR", ":8080"),
 		Handler: mux,
 	}
+	ctxWithCancel, cancel := context.WithCancel(ctx)
+	releaserserver.CronRefresh(ctxWithCancel, serverImpl, envWithDefaultTime("CRON_REFRESH_INTERVAL", 0))
 	killOnSigTerm(ctx, logger, &httpServer)
 	logger.Info(ctx, "starting server", zap.String("addr", httpServer.Addr))
 	err := httpServer.ListenAndServe()
+	cancel()
 	logger.Info(ctx, "server stopped", zap.Error(err))
 	if !errors.Is(err, http.ErrServerClosed) {
 		logger.Error(ctx, "http server error", zap.Error(err))
