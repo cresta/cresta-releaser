@@ -5,6 +5,8 @@ import (
 	"encoding"
 	"fmt"
 	"strings"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type ApplicationList struct {
@@ -31,7 +33,7 @@ type ReleaseCandidate struct {
 
 type Application struct {
 	Name             string
-	ReleaseCandidate []ReleaseCandidate `json:"releaseCandidates"`
+	ReleaseCandidate []*ReleaseCandidate `json:"releaseCandidates"`
 }
 
 type ReleaseCandidateStatus int
@@ -111,6 +113,7 @@ func GetAllReleaseStatus(ctx context.Context, a Api) (*ApplicationList, error) {
 		return nil, fmt.Errorf("failed to get application list: %w", err)
 	}
 	var ret ApplicationList
+	eg, egCtx := errgroup.WithContext(ctx)
 	for _, app := range apps {
 		releases, err := a.ListReleases(app)
 		if err != nil {
@@ -121,7 +124,7 @@ func GetAllReleaseStatus(ctx context.Context, a Api) (*ApplicationList, error) {
 		}
 		for idx, release := range releases {
 			if idx == 0 {
-				app.ReleaseCandidate = append(app.ReleaseCandidate, ReleaseCandidate{
+				app.ReleaseCandidate = append(app.ReleaseCandidate, &ReleaseCandidate{
 					Name:   release,
 					Status: RC_STATUS_RELEASED,
 				})
@@ -132,20 +135,29 @@ func GetAllReleaseStatus(ctx context.Context, a Api) (*ApplicationList, error) {
 				return nil, fmt.Errorf("failed to get preview for %s:%s: %w", app.Name, release, err)
 			}
 			hasChange := old.Yaml() != newRelease.Yaml()
-			rc := ReleaseCandidate{
+			rc := &ReleaseCandidate{
 				Name:   release,
 				Status: getStatus(hasChange),
 			}
 			if rc.Status == RC_STATUS_PENDING {
-				prNum, err := CheckForPRForRelease(ctx, a, app.Name, release)
-				if err != nil {
-					return nil, fmt.Errorf("failed to check for PR for %s:%s: %w", app.Name, release, err)
-				}
-				rc.ExistingPR = prNum
+				a := a
+				release := release
+				rc := rc
+				eg.Go(func() error {
+					prNum, err := CheckForPRForRelease(egCtx, a, app.Name, release)
+					if err != nil {
+						return fmt.Errorf("failed to check for PR for %s:%s: %w", app.Name, release, err)
+					}
+					rc.ExistingPR = prNum
+					return nil
+				})
 			}
 			app.ReleaseCandidate = append(app.ReleaseCandidate, rc)
 		}
 		ret.Application = append(ret.Application, app)
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, fmt.Errorf("failed to wait for all PRs: %w", err)
 	}
 	return &ret, nil
 }

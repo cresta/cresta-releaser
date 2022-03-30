@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/bradleyfalzon/ghinstallation"
 	"github.com/shurcooL/githubv4"
@@ -60,6 +61,17 @@ type GithubGraphqlAPI struct {
 	ClientV4      *githubv4.Client
 	Logger        *zap.Logger
 	tokenFunction func(ctx context.Context) (string, error)
+	findPrCache   ExpireCache[findPrKey, findPrValue]
+}
+
+type findPrKey struct {
+	owner  string
+	name   string
+	branch string
+}
+
+type findPrValue struct {
+	number int64
 }
 
 func (g *GithubGraphqlAPI) GetAccessToken(ctx context.Context) (string, error) {
@@ -148,6 +160,17 @@ type GraphQLPRQueryNode struct {
 func (g *GithubGraphqlAPI) FindPRForBranch(ctx context.Context, owner string, name string, branch string) (int64, error) {
 	g.Logger.Debug("FindPRForBranch", zap.String("owner", owner), zap.String("name", name), zap.String("branch", branch))
 	defer g.Logger.Debug("Done FindPRForBranch")
+	cacheKey := findPrKey{
+		owner:  owner,
+		name:   name,
+		branch: branch,
+	}
+	prNum, exists := g.findPrCache.Get(cacheKey)
+	if exists {
+		g.Logger.Debug("pr cached value", zap.Int64("prNum", prNum.number))
+		return prNum.number, nil
+	}
+
 	var query struct {
 		Repository struct {
 			PullRequests struct {
@@ -166,12 +189,14 @@ func (g *GithubGraphqlAPI) FindPRForBranch(ctx context.Context, owner string, na
 	}
 	if len(query.Repository.PullRequests.Nodes) == 0 {
 		g.Logger.Debug("No PRs found")
+		g.findPrCache.Set(cacheKey, findPrValue{number: int64(0)})
 		return 0, nil
 	}
 	if len(query.Repository.PullRequests.Nodes) > 1 {
 		return 0, fmt.Errorf("found multiple PRs for branch %s", branch)
 	}
 	pr := query.Repository.PullRequests.Nodes[0]
+	g.findPrCache.Set(cacheKey, findPrValue{number: int64(pr.Number)})
 	return int64(pr.Number), nil
 }
 
@@ -203,6 +228,17 @@ func intFromOsEnv(s string) int64 {
 	return i
 }
 
+func createGraphqlAPI(gql *githubv4.Client, logger *zap.Logger, tokenFunction func(context.Context) (string, error)) *GithubGraphqlAPI {
+	return &GithubGraphqlAPI{
+		ClientV4:      gql,
+		Logger:        logger,
+		tokenFunction: tokenFunction,
+		findPrCache: ExpireCache[findPrKey, findPrValue]{
+			defaultExpiry: time.Minute,
+		},
+	}
+}
+
 func clientFromToken(_ context.Context, logger *zap.Logger, token string) (GitHub, error) {
 	src := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
@@ -210,13 +246,9 @@ func clientFromToken(_ context.Context, logger *zap.Logger, token string) (GitHu
 	httpClient := oauth2.NewClient(context.Background(), src)
 	httpClient.Transport = DebugLogTransport(httpClient.Transport, logger)
 	gql := githubv4.NewClient(httpClient)
-	return &GithubGraphqlAPI{
-		ClientV4: gql,
-		Logger:   logger,
-		tokenFunction: func(_ context.Context) (string, error) {
-			return token, nil
-		},
-	}, nil
+	return createGraphqlAPI(gql, logger, func(_ context.Context) (string, error) {
+		return token, nil
+	}), nil
 }
 
 func clientFromPEM(ctx context.Context, logger *zap.Logger, baseRoundTripper http.RoundTripper, appID int64, installID int64, pemLoc string) (GitHub, error) {
@@ -232,13 +264,7 @@ func clientFromPEM(ctx context.Context, logger *zap.Logger, baseRoundTripper htt
 		return nil, fmt.Errorf("unable to validate token: %w", err)
 	}
 	gql := githubv4.NewClient(&http.Client{Transport: DebugLogTransport(trans, logger)})
-	return &GithubGraphqlAPI{
-		ClientV4: gql,
-		Logger:   logger,
-		tokenFunction: func(ctx context.Context) (string, error) {
-			return trans.Token(ctx)
-		},
-	}, nil
+	return createGraphqlAPI(gql, logger, trans.Token), nil
 }
 
 func tokenFromGithubCLI() string {

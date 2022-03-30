@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	releaser_protobuf "github.com/cresta/cresta-releaser/rpc/releaser"
 	mux2 "github.com/gorilla/mux"
@@ -58,4 +59,13 @@ func killOnSigTerm(ctx context.Context, logger *zapctx.Logger, httpServer *http.
 			logger.Error(ctx, "failed to shutdown http server", zap.Error(err))
 		}
 	}()
+}
+
+func envWithDefaultTime(s string, defaultValue time.Duration) time.Duration {
+	if v := os.Getenv(s); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return defaultValue
 }

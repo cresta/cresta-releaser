@@ -38,13 +38,25 @@ spec:
             - name: LOG_LEVEL
               value: {{ .Values.logLevel | quote }}
             {{- end }}
-            {{- if .Values.repoURL }}
+            {{- if .Values.git.url }}
             - name: REPO_URL
-              value: {{ .Values.repoURL | quote }}
+              value: {{ .Values.git.url | quote }}
             {{- end }}
-            {{- if .Values.repoDiskLocation }}
+            {{- if .Values.git.diskLocation }}
             - name: REPO_DISK_LOCATION
-              value: {{ .Values.repoDiskLocation | quote }}
+              value: {{ .Values.git.diskLocation | quote }}
+            {{- end }}
+            {{- if .Values.git.author.name }}
+            - name: GIT_AUTHOR_NAME
+              value: {{ .Values.git.author.name | quote }}
+            {{- end }}
+            {{- if .Values.git.refreshInterval }}
+            - name: CRON_REFRESH_INTERVAL
+              value: {{ .Values.git.refreshInterval | quote }}
+            {{- end }}
+            {{- if .Values.git.author.email }}
+            - name: GIT_AUTHOR_EMAIL
+              value: {{ .Values.git.author.email | quote }}
             {{- end }}
             {{- if .Values.listenAddress }}
             - name: LISTEN_ADDR
