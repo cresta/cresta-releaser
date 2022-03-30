@@ -85,10 +85,10 @@ func (g *GitCli) refreshWithFunction(ctx context.Context, f func(context.Context
 
 func (g *GitCli) IsAuthorConfigured(ctx context.Context) (bool, error) {
 	if err := pipe.Shell("git config --get user.name").Run(ctx); err != nil {
-		return false, err
+		return false, nil
 	}
 	if err := pipe.Shell("git config --get user.email").Run(ctx); err != nil {
-		return false, err
+		return false, nil
 	}
 	return true, nil
 }
