@@ -22,6 +22,9 @@ type Server struct {
 func (s *Server) PushPromotion(ctx context.Context, request *releaser_protobuf.PushPromotionRequest) (*releaser_protobuf.PushPromotionResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.Repo.ResetExistingToOrigin(ctx); err != nil {
+		return nil, fmt.Errorf("failed to reset to origin: %w", err)
+	}
 	branchName := releaser.DefaultBranchNameForRelease(request.ApplicationName, request.ReleaseName)
 	if pr, err := s.Api.CheckForPRForBranch(ctx, branchName); err != nil {
 		return nil, fmt.Errorf("failed to check for existing PR for branch %s: %w", branchName, err)
@@ -86,6 +89,9 @@ func NewServer(ctx context.Context, logger *zapctx.Logger, api releaser.Api, rep
 func (s *Server) GetAllApplicationStatus(ctx context.Context, _ *releaser_protobuf.GetAllApplicationStatusRequest) (*releaser_protobuf.GetAllApplicationStatusResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.Repo.ResetExistingToOrigin(ctx); err != nil {
+		return nil, fmt.Errorf("failed to reset to origin: %w", err)
+	}
 	if err := s.Repo.UpdateCheckout(ctx); err != nil {
 		return nil, fmt.Errorf("failed to update checkout: %w", err)
 	}
