@@ -20,10 +20,10 @@ func main() {
 	logger.Info(ctx, "Starting application")
 	api := MustReturn(releaser.NewFromCommandLine(ctx, logger.Unwrap(ctx), nil))
 	repo := MustReturn(managedgitrepo.NewRepo(ctx, envWithDefault("REPO_DISK_LOCATION", "/tmp/repo"), os.Getenv("REPO_URL"), api.Fs, api.Github, api.Git))
-	Must(repo.VerifyOrSetAuthorInfo(ctx, os.Getenv("GIT_AUTHOR_NAME"), os.Getenv("GIT_AUTHOR_EMAIL")))
 	serverImpl := MustReturn(releaserserver.NewServer(ctx, logger, api, repo))
 	twirpServer := releaser_protobuf.NewReleaserServer(serverImpl)
 	Must(os.Chdir(envWithDefault("REPO_DISK_LOCATION", "/tmp/repo")))
+	Must(repo.VerifyOrSetAuthorInfo(ctx, os.Getenv("GIT_AUTHOR_NAME"), os.Getenv("GIT_AUTHOR_EMAIL")))
 	mux := muxWithHealthCheckForTwirp(twirpServer)
 	httpServer := http.Server{
 		Addr:    envWithDefault("LISTEN_ADDR", ":8080"),
