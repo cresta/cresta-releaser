@@ -29,6 +29,12 @@ func (e *ExpireCache[K, V]) Get(key K) (V, bool) {
 	return ret, false
 }
 
+func (e *ExpireCache[K, V]) Clear() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.cache = make(map[K]expireValues[V])
+}
+
 func (e *ExpireCache[K, V]) Set(key K, value V) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

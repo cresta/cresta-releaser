@@ -104,6 +104,7 @@ func (g *GithubGraphqlAPI) FindPullRequestOid(ctx context.Context, owner string,
 }
 
 func (g *GithubGraphqlAPI) AcceptPullRequest(ctx context.Context, approvalmessage string, owner string, name string, number int64) error {
+	defer g.findPrCache.Clear()
 	prid, err := g.FindPullRequestOid(ctx, owner, name, number)
 	if err != nil {
 		return fmt.Errorf("failed to find PR: %w", err)
@@ -130,6 +131,7 @@ func (g *GithubGraphqlAPI) AcceptPullRequest(ctx context.Context, approvalmessag
 }
 
 func (g *GithubGraphqlAPI) MergePullRequest(ctx context.Context, owner string, name string, number int64) error {
+	defer g.findPrCache.Clear()
 	prid, err := g.FindPullRequestOid(ctx, owner, name, number)
 	if err != nil {
 		return fmt.Errorf("failed to find PR: %w", err)
@@ -350,6 +352,7 @@ func (g *GithubGraphqlAPI) Self(ctx context.Context) (string, error) {
 }
 
 func (g *GithubGraphqlAPI) CreatePullRequest(ctx context.Context, remoteRepositoryId graphql.ID, baseRefName string, remoteRefName string, title string, body string) (int64, error) {
+	defer g.findPrCache.Clear()
 	g.Logger.Debug("creating pull request", zap.Any("remoteRepositoryId", remoteRepositoryId), zap.String("baseRefName", baseRefName), zap.String("remoteRefName", remoteRefName), zap.String("title", title), zap.String("body", body))
 	defer g.Logger.Debug("done creating pull request")
 	var ret createPullRequest
