@@ -9,6 +9,9 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"text/template"
+
+	"github.com/Masterminds/sprig"
 
 	"sigs.k8s.io/yaml"
 
@@ -23,6 +26,67 @@ type FromCommandLine struct {
 	Git    Git
 	Github GitHub
 	Logger *zap.Logger
+}
+
+func (f *FromCommandLine) CreateApplicationFromTemplate(templateDir string, applicationName string, data interface{}) error {
+	if exists, err := f.Fs.DirectoryExists(templateDir); err != nil {
+		return fmt.Errorf("unable to check if template directory %s exists: %w", templateDir, err)
+	} else if !exists {
+		return fmt.Errorf("template directory %s does not exist", templateDir)
+	}
+	applicationDir := filepath.Join("apps", applicationName)
+	if exists, err := f.Fs.DirectoryExists(applicationDir); err != nil {
+		return fmt.Errorf("unable to check if application directory %s exists: %w", applicationDir, err)
+	} else if exists {
+		return fmt.Errorf("application directory %s already exists", applicationDir)
+	}
+	allFiles, err := FilesAtRoot(f.Fs, templateDir)
+	if err != nil {
+		return fmt.Errorf("unable to get files at root of template directory %s: %w", templateDir, err)
+	}
+	for _, file := range allFiles {
+		fileContent, err := f.Fs.ReadFile(file.RelativePath, file.Name)
+		if err != nil {
+			return fmt.Errorf("unable to read file %s: %w", filepath.Join(file.RelativePath, file.Name), err)
+		}
+		t, err := template.New("file").Funcs(sprig.TxtFuncMap()).Parse(string(fileContent))
+		if err != nil {
+			return fmt.Errorf("unable to parse template for file %s: %w", filepath.Join(file.RelativePath, file.Name), err)
+		}
+		type templateData struct {
+			Name string
+			Data interface{}
+		}
+		var buffer bytes.Buffer
+		if err := t.Execute(&buffer, templateData{Name: applicationName, Data: data}); err != nil {
+			return fmt.Errorf("unable to execute template for file %s: %w", filepath.Join(file.RelativePath, file.Name), err)
+		}
+		relPath, err := filepath.Rel(templateDir, file.RelativePath)
+		if err != nil {
+			return fmt.Errorf("unable to get relative path for file %s: %w", filepath.Join(file.RelativePath, file.Name), err)
+		}
+		newFileDirectory := filepath.Join(applicationDir, relPath)
+		if err := f.Fs.MakeDirectoryAndParents(newFileDirectory); err != nil {
+			return fmt.Errorf("unable to make directory %s: %w", file.RelativePath, err)
+		}
+		fileName, newFileContent := checkForTemplateExtensions(file.Name, buffer.String())
+		if err := f.Fs.CreateFile(newFileDirectory, fileName, newFileContent, file.Mode); err != nil {
+			return fmt.Errorf("unable to create file %s: %w", filepath.Join(file.RelativePath, file.Name), err)
+		}
+	}
+	return nil
+}
+
+func checkForTemplateExtensions(fileName string, fileContent string) (string, string) {
+	lines := strings.Split(fileContent, "\n")
+	newFilenameRegex := regexp.MustCompile("^#\\s*filename:\\s*(.*)$")
+	newFilenameMatch := newFilenameRegex.FindStringSubmatch(lines[0])
+	if len(newFilenameMatch) > 1 {
+		newFilename := strings.TrimSpace(newFilenameMatch[1])
+		lines = lines[1:]
+		return newFilename, strings.Join(lines, "\n")
+	}
+	return fileName, fileContent
 }
 
 func (f *FromCommandLine) AreThereUncommittedChanges(ctx context.Context) (bool, error) {
@@ -566,6 +630,8 @@ type Api interface {
 	// CreateChildApplication creates a child application that releases with the same cadence as the parent.  It assumes
 	// the child does not exist.
 	CreateChildApplication(parent string, child string) error
+	// CreateApplicationFromTemplate creates a new application from a go template directory
+	CreateApplicationFromTemplate(templateDir string, applicationName string, data interface{}) error
 	// ListReleases will list all releases for an application
 	ListReleases(application string) ([]string, error)
 	// ListApplications will list all applications

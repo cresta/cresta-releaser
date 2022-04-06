@@ -2,7 +2,9 @@ package mage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"sync"
 
@@ -66,6 +68,23 @@ func ListReleases(_ context.Context, application string) error {
 // will also modify parent's 00 release to point to the child.
 func CreateChildApplication(_ context.Context, parent string, child string) error {
 	return MustGetInstance().CreateChildApplication(parent, child)
+}
+
+// CreateApplicationFromTemplate creates a new application named "name" from template directory "template".
+// This is just a copy/paste of the contents of template, with each file rendered as a go-template and
+// .Name as the value of the application's name.  Inside .Data is the JSON decoded contents of dataFile.
+func CreateApplicationFromTemplate(_ context.Context, name string, templateDir string, dataFile string) error {
+	var extraData interface{}
+	if dataFile != "" {
+		contents, err := ioutil.ReadFile(dataFile)
+		if err != nil {
+			return fmt.Errorf("unable to read data file %s: %s", dataFile, err)
+		}
+		if err := json.Unmarshal(contents, &extraData); err != nil {
+			return err
+		}
+	}
+	return MustGetInstance().CreateApplicationFromTemplate(templateDir, name, extraData)
 }
 
 // ListApplications will list all applications
