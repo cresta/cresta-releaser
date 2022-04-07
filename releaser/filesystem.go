@@ -20,6 +20,7 @@ type FileSystem interface {
 	FilesInsideDirectory(dir string) ([]File, error)
 	ReadFile(dir string, name string) ([]byte, error)
 	FileExists(dir string, name string) (bool, error)
+	MakeDirectoryAndParents(dir string) error
 }
 
 func IsGitCheckout(fs FileSystem, dir string) bool {
@@ -58,6 +59,14 @@ type File struct {
 
 type OSFileSystem struct {
 	Logger *zap.Logger
+}
+
+func (O *OSFileSystem) MakeDirectoryAndParents(dir string) error {
+	err := os.MkdirAll(dir, 0755)
+	if err != nil {
+		return fmt.Errorf("error creating directory %s: %w", dir, err)
+	}
+	return nil
 }
 
 func (O *OSFileSystem) FileExists(dir string, name string) (bool, error) {
