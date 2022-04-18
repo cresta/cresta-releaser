@@ -130,7 +130,7 @@ func GetAllReleaseStatus(ctx context.Context, a Api) (*ApplicationList, error) {
 				})
 				continue
 			}
-			old, newRelease, err := a.PreviewRelease(app.Name, release)
+			old, newRelease, err := a.PreviewRelease(ctx, app.Name, release, true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get preview for %s:%s: %w", app.Name, release, err)
 			}

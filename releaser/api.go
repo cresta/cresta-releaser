@@ -4,16 +4,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/Masterminds/sprig"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sigs.k8s.io/yaml"
 	"sort"
 	"strings"
 	"text/template"
-
-	"github.com/Masterminds/sprig"
-
-	"sigs.k8s.io/yaml"
+	"time"
 
 	"go.uber.org/zap"
 	"sigs.k8s.io/kustomize/api/types"
@@ -333,8 +332,20 @@ type regexSearchReplace struct {
 }
 
 type ReleaseConfig struct {
-	SearchReplace      []searchReplace      `yaml:"searchReplace"`
-	RegexSearchReplace []regexSearchReplace `yaml:"regexSearchReplace"`
+	SearchReplace      []searchReplace      `yaml:"searchReplace,omitempty"`
+	RegexSearchReplace []regexSearchReplace `yaml:"regexSearchReplace,omitempty"`
+	Metadata           struct {
+		ApplicationName string `yaml:"applicationName,omitempty"`
+		ReleaseName     string `yaml:"releaseName,omitempty"`
+		OriginalRelease struct {
+			CreationTime time.Time `yaml:"creationTime,omitempty"`
+			GitSha       string    `yaml:"gitSha,omitempty"`
+		} `yaml:"originalRelease"`
+		CurrentRelease struct {
+			CreationTime time.Time `yaml:"creationTime,omitempty"`
+			Author       string    `yaml:"author,omitempty"`
+		} `yaml:"currentRelease,omitempty"`
+	}
 }
 
 func (c *ReleaseConfig) ApplyToFile(file ReleaseFile, previousReleaseName string, newReleaseName string) (string, error) {
@@ -372,7 +383,7 @@ func (c *ReleaseConfig) mergeFrom(r ReleaseConfig) {
 	r.RegexSearchReplace = append(r.RegexSearchReplace, r.RegexSearchReplace...)
 }
 
-func (f *FromCommandLine) PreviewRelease(application string, release string) (oldRelease *Release, newRelease *Release, err error) {
+func (f *FromCommandLine) PreviewRelease(ctx context.Context, application string, release string, ignoreMetadataFile bool) (oldRelease *Release, newRelease *Release, err error) {
 	f.Logger.Debug("previewing release")
 	defer f.Logger.Debug("previewed release")
 	releases, err := f.ListReleases(application)
@@ -406,7 +417,7 @@ func (f *FromCommandLine) PreviewRelease(application string, release string) (ol
 		return nil, nil, fmt.Errorf("unable to get promotion config for release %s: %w", previousReleaseName, err)
 	}
 	f.Logger.Debug("promotion config", zap.Any("config", promotionConfig))
-	nextRelease, err := describeNewRelease(prevRelease, previousReleaseName, release, promotionConfig)
+	nextRelease, err := describeNewRelease(ctx, prevRelease, previousReleaseName, release, promotionConfig, application, f.Git, ignoreMetadataFile)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to describe new release: %w", err)
 	}
@@ -447,7 +458,19 @@ func ReleaseConfigForRelease(fs FileSystem, application string, release string) 
 	return ret, nil
 }
 
-func describeNewRelease(promoteFrom *Release, previousName string, newName string, releaseConfig *ReleaseConfig) (*Release, error) {
+func ReleaseConfigFromRelease(release *Release) (*ReleaseConfig, error) {
+	releaseFile, exists := release.getFile(releaserFileName)
+	if !exists {
+		return nil, nil
+	}
+	var r ReleaseConfig
+	if err := yaml.Unmarshal([]byte(releaseFile.Content), &r); err != nil {
+		return nil, fmt.Errorf("unable to parse .releaser.yaml: %w", err)
+	}
+	return &r, nil
+}
+
+func describeNewRelease(ctx context.Context, promoteFrom *Release, previousName string, newName string, releaseConfig *ReleaseConfig, application string, g Git, ignoreMetadataFile bool) (*Release, error) {
 	ret := &Release{}
 	for _, f := range promoteFrom.Files {
 		newContent, err := releaseConfig.ApplyToFile(f, previousName, newName)
@@ -460,7 +483,50 @@ func describeNewRelease(promoteFrom *Release, previousName string, newName strin
 			Directory: f.Directory,
 		})
 	}
+	if !ignoreMetadataFile {
+		newReleaserContent, err := newReleaseMetadata(ctx, promoteFrom, newName, application, g)
+		if err != nil {
+			return nil, fmt.Errorf("unable to generate new releaser content: %w", err)
+		}
+		ret.updateFile(releaserFileName, newReleaserContent)
+	}
 	return ret, nil
+}
+
+func newReleaseMetadata(ctx context.Context, promoteFrom *Release, newName string, application string, g Git) (ReleaseFile, error) {
+	previous, err := ReleaseConfigFromRelease(promoteFrom)
+	if err != nil {
+		return ReleaseFile{}, fmt.Errorf("unable to get previous release config: %w", err)
+	}
+	if previous == nil {
+		previous = &ReleaseConfig{}
+	}
+	newConfig := &ReleaseConfig{}
+	newConfig.Metadata.ApplicationName = application
+	newConfig.Metadata.ReleaseName = newName
+	newConfig.Metadata.CurrentRelease.CreationTime = time.Now().UTC()
+	if previous.Metadata.OriginalRelease.CreationTime.IsZero() {
+		newConfig.Metadata.OriginalRelease.CreationTime = newConfig.Metadata.CurrentRelease.CreationTime
+	} else {
+		newConfig.Metadata.OriginalRelease.CreationTime = previous.Metadata.OriginalRelease.CreationTime
+	}
+	if previous.Metadata.OriginalRelease.GitSha == "" {
+		sha, err := g.CurrentGitSha(ctx)
+		if err != nil {
+			return ReleaseFile{}, fmt.Errorf("unable to get release git sha: %w", err)
+		}
+		newConfig.Metadata.OriginalRelease.GitSha = sha
+	} else {
+		newConfig.Metadata.OriginalRelease.GitSha = previous.Metadata.OriginalRelease.GitSha
+	}
+	content, err := yaml.Marshal(newConfig)
+	if err != nil {
+		return ReleaseFile{}, fmt.Errorf("unable to marshal release config: %w", err)
+	}
+	return ReleaseFile{
+		Name:    releaserFileName,
+		Content: string(content),
+	}, nil
 }
 
 func indexOf(s string, in []string) int {
@@ -596,6 +662,28 @@ type Release struct {
 	Files []ReleaseFile
 }
 
+func (r *Release) updateFile(name string, newFile ReleaseFile) {
+	for i, f := range r.Files {
+		if f.Name == name {
+			r.Files[i] = newFile
+			return
+		}
+	}
+	r.Files = append(r.Files, newFile)
+}
+
+func (r *Release) getFile(name string) (ReleaseFile, bool) {
+	if r == nil {
+		return ReleaseFile{}, false
+	}
+	for _, f := range r.Files {
+		if f.Name == name {
+			return f, true
+		}
+	}
+	return ReleaseFile{}, false
+}
+
 func (r *Release) Yaml() string {
 	var b bytes.Buffer
 	for idx, f := range r.Files {
@@ -640,7 +728,7 @@ type Api interface {
 	GetRelease(application string, release string) (*Release, error)
 	// PreviewRelease will show what a new release will look like, promoting from the previous version.  It returns the
 	// old release and the new release.
-	PreviewRelease(application string, release string) (*Release, *Release, error)
+	PreviewRelease(ctx context.Context, application string, release string, ignoreMetadataFile bool) (*Release, *Release, error)
 	// ApplyRelease will promote a release to be the current version by applying the previously
 	// fetched PreviewRelease
 	ApplyRelease(application string, release string, oldRelease *Release, newRelease *Release) error
