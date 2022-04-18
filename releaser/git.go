@@ -29,6 +29,7 @@ type Git interface {
 	IsAuthorConfigured(ctx context.Context) (bool, error)
 	SetLocalAuthor(ctx context.Context, name string, email string) error
 	ForceRemoteRefresh(ctx context.Context) error
+	CurrentGitSha(ctx context.Context) (string, error)
 }
 
 type refreshInterval struct {
@@ -71,6 +72,14 @@ func (i *refreshInterval) AlwaysExecute(ctx context.Context, f func(ctx context.
 type GitCli struct {
 	Logger       *zap.Logger
 	fetchRefresh refreshInterval
+}
+
+func (g *GitCli) CurrentGitSha(ctx context.Context) (string, error) {
+	var stdout bytes.Buffer
+	if err := pipe.Shell("git rev-parse --verify HEAD").Execute(ctx, nil, &stdout, nil); err != nil {
+		return "", fmt.Errorf("failed to get current git sha: %w", err)
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 func (g *GitCli) ForceRemoteRefresh(ctx context.Context) error {
@@ -185,6 +194,7 @@ func (g *GitCli) GetRemoteAsGithubRepo(ctx context.Context) (string, string, err
 	remoteURL = strings.TrimSpace(remoteURL)
 	remoteURL = strings.ToLower(remoteURL)
 	remoteURL = strings.TrimSuffix(remoteURL, ".git")
+	remoteURL = strings.TrimPrefix(remoteURL, "git@github.com:")
 	parts := strings.Split(remoteURL, "/")
 	if len(parts) < 2 {
 		return "", "", fmt.Errorf("failed to parse remote URL %s", remoteURL)

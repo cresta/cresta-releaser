@@ -52,4 +52,5 @@ message ReleaseStatus {
   }
   Status status = 2;
   int64 pr_number = 3;
+  string original_git_sha = 4;
 }
