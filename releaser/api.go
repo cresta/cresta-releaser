@@ -13,10 +13,9 @@ import (
 	"time"
 
 	"github.com/Masterminds/sprig"
-	"sigs.k8s.io/yaml"
-
 	"go.uber.org/zap"
 	"sigs.k8s.io/kustomize/api/types"
+	"sigs.k8s.io/yaml"
 )
 
 // FromCommandLine will process our API using command line execution. It assumes you have things like `Git` already
