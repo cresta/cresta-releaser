@@ -125,6 +125,8 @@ func NeedsPromotion(ctx context.Context, a Api, application string, release stri
 	if err != nil {
 		return false, fmt.Errorf("failed to get preview for %s:%s: %w", application, release, err)
 	}
+	old.cleanReleaseConfig()
+	newRelease.cleanReleaseConfig()
 	hasChange := old.Yaml() != newRelease.Yaml()
 	return hasChange, nil
 }

@@ -331,21 +331,23 @@ type regexSearchReplace struct {
 	FileNameMatch  string `yaml:"fileNameMatch"`
 }
 
+type ReleaseConfigMetadata struct {
+	ApplicationName string `yaml:"applicationName,omitempty"`
+	ReleaseName     string `yaml:"releaseName,omitempty"`
+	OriginalRelease struct {
+		CreationTime time.Time `yaml:"creationTime,omitempty"`
+		GitSha       string    `yaml:"gitSha,omitempty"`
+	} `yaml:"originalRelease"`
+	CurrentRelease struct {
+		CreationTime time.Time `yaml:"creationTime,omitempty"`
+		Author       string    `yaml:"author,omitempty"`
+	} `yaml:"currentRelease,omitempty"`
+}
+
 type ReleaseConfig struct {
-	SearchReplace      []searchReplace      `yaml:"searchReplace,omitempty"`
-	RegexSearchReplace []regexSearchReplace `yaml:"regexSearchReplace,omitempty"`
-	Metadata           struct {
-		ApplicationName string `yaml:"applicationName,omitempty"`
-		ReleaseName     string `yaml:"releaseName,omitempty"`
-		OriginalRelease struct {
-			CreationTime time.Time `yaml:"creationTime,omitempty"`
-			GitSha       string    `yaml:"gitSha,omitempty"`
-		} `yaml:"originalRelease"`
-		CurrentRelease struct {
-			CreationTime time.Time `yaml:"creationTime,omitempty"`
-			Author       string    `yaml:"author,omitempty"`
-		} `yaml:"currentRelease,omitempty"`
-	}
+	SearchReplace      []searchReplace       `yaml:"searchReplace,omitempty"`
+	RegexSearchReplace []regexSearchReplace  `yaml:"regexSearchReplace,omitempty"`
+	Metadata           ReleaseConfigMetadata `yaml:"metadata,omitempty"`
 }
 
 func (c *ReleaseConfig) ApplyToFile(file ReleaseFile, previousReleaseName string, newReleaseName string) (string, error) {
@@ -662,6 +664,14 @@ type Release struct {
 	Files []ReleaseFile
 }
 
+func (r *Release) cleanReleaseConfig() {
+	r.updateFile(releaserFileName, ReleaseFile{
+		Name:      releaserFileName,
+		Directory: "",
+		Content:   "",
+	})
+}
+
 func (r *Release) loadReleaseConfig() (*ReleaseConfig, error) {
 	f, exists := r.getFile(releaserFileName)
 	if !exists {
@@ -696,7 +706,17 @@ func (r *Release) getFile(name string) (ReleaseFile, bool) {
 	return ReleaseFile{}, false
 }
 
+func (r *Release) SortFilesByNameAndDirectory() {
+	sort.Slice(r.Files, func(i, j int) bool {
+		if r.Files[i].Name == r.Files[j].Name {
+			return r.Files[i].Directory < r.Files[j].Directory
+		}
+		return r.Files[i].Name < r.Files[j].Name
+	})
+}
+
 func (r *Release) Yaml() string {
+	r.SortFilesByNameAndDirectory()
 	var b bytes.Buffer
 	for idx, f := range r.Files {
 		if idx != 0 {
