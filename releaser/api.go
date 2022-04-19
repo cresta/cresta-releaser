@@ -331,21 +331,23 @@ type regexSearchReplace struct {
 	FileNameMatch  string `yaml:"fileNameMatch"`
 }
 
+type ReleaseConfigMetadata struct {
+	ApplicationName string `yaml:"applicationName,omitempty"`
+	ReleaseName     string `yaml:"releaseName,omitempty"`
+	OriginalRelease struct {
+		CreationTime time.Time `yaml:"creationTime,omitempty"`
+		GitSha       string    `yaml:"gitSha,omitempty"`
+	} `yaml:"originalRelease"`
+	CurrentRelease struct {
+		CreationTime time.Time `yaml:"creationTime,omitempty"`
+		Author       string    `yaml:"author,omitempty"`
+	} `yaml:"currentRelease,omitempty"`
+}
+
 type ReleaseConfig struct {
-	SearchReplace      []searchReplace      `yaml:"searchReplace,omitempty"`
-	RegexSearchReplace []regexSearchReplace `yaml:"regexSearchReplace,omitempty"`
-	Metadata           struct {
-		ApplicationName string `yaml:"applicationName,omitempty"`
-		ReleaseName     string `yaml:"releaseName,omitempty"`
-		OriginalRelease struct {
-			CreationTime time.Time `yaml:"creationTime,omitempty"`
-			GitSha       string    `yaml:"gitSha,omitempty"`
-		} `yaml:"originalRelease"`
-		CurrentRelease struct {
-			CreationTime time.Time `yaml:"creationTime,omitempty"`
-			Author       string    `yaml:"author,omitempty"`
-		} `yaml:"currentRelease,omitempty"`
-	}
+	SearchReplace      []searchReplace       `yaml:"searchReplace,omitempty"`
+	RegexSearchReplace []regexSearchReplace  `yaml:"regexSearchReplace,omitempty"`
+	Metadata           ReleaseConfigMetadata `yaml:"metadata,omitempty"`
 }
 
 func (c *ReleaseConfig) ApplyToFile(file ReleaseFile, previousReleaseName string, newReleaseName string) (string, error) {
@@ -660,6 +662,24 @@ var _ Api = &FromCommandLine{}
 type Release struct {
 	// Files is each released file
 	Files []ReleaseFile
+}
+
+func (r *Release) cleanReleaseConfig() {
+	f, exists := r.getFile(releaserFileName)
+	if !exists {
+		return
+	}
+	rc, err := r.loadReleaseConfig()
+	if err != nil {
+		return
+	}
+	rc.Metadata = ReleaseConfigMetadata{}
+	b, err := yaml.Marshal(rc)
+	if err != nil {
+		return
+	}
+	f.Content = string(b)
+	r.updateFile(f.Name, f)
 }
 
 func (r *Release) loadReleaseConfig() (*ReleaseConfig, error) {
