@@ -492,6 +492,7 @@ func describeNewRelease(ctx context.Context, promoteFrom *Release, previousName 
 		}
 		ret.updateFile(releaserFileName, newReleaserContent)
 	}
+	ret.SortFilesByNameAndDirectory()
 	return ret, nil
 }
 
@@ -708,20 +709,22 @@ func (r *Release) getFile(name string) (ReleaseFile, bool) {
 
 func (r *Release) SortFilesByNameAndDirectory() {
 	sort.Slice(r.Files, func(i, j int) bool {
-		if r.Files[i].Name == r.Files[j].Name {
-			return r.Files[i].Directory < r.Files[j].Directory
+		if r.Files[i].Directory == r.Files[j].Directory {
+			return r.Files[i].Name < r.Files[j].Name
 		}
-		return r.Files[i].Name < r.Files[j].Name
+		return r.Files[i].Directory < r.Files[j].Directory
 	})
 }
 
 func (r *Release) Yaml() string {
 	r.SortFilesByNameAndDirectory()
-	var b bytes.Buffer
+	var b strings.Builder
 	for idx, f := range r.Files {
 		if idx != 0 {
 			b.WriteString("---\n")
 		}
+		b.WriteString("# File: " + f.Name + "\n")
+		b.WriteString("# Directory: " + f.Directory + "\n")
 		b.WriteString(f.Content)
 		b.WriteString("\n")
 	}
