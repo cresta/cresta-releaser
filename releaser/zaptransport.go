@@ -16,6 +16,9 @@ type Zaptransport struct {
 }
 
 func (z *Zaptransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if z.Logger == nil {
+		return z.Base.RoundTrip(request)
+	}
 	var bodyReadAsBuffer bytes.Buffer
 	if _, err := io.Copy(&bodyReadAsBuffer, request.Body); err != nil {
 		return nil, fmt.Errorf("error reading request body: %w", err)
@@ -24,7 +27,11 @@ func (z *Zaptransport) RoundTrip(request *http.Request) (*http.Response, error) 
 	z.Logger.Debug("staring request", zap.String("url", request.URL.String()), zap.String("method", request.Method), zap.Any("header", request.Header), zap.Any("body", bodyReadAsBuffer.String()))
 	defer z.Logger.Debug("ending request", zap.String("url", request.URL.String()))
 	resp, err := z.Base.RoundTrip(request)
-	z.Logger.Debug("response", zap.Any("header", resp.Header), zap.Any("body", resp.Body), zap.Error(err))
+	if err != nil {
+		z.Logger.Debug("response error", zap.Error(err))
+	} else {
+		z.Logger.Debug("response", zap.Any("header", resp.Header), zap.Any("body", resp.Body))
+	}
 	return resp, err
 }
 

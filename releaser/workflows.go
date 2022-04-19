@@ -5,6 +5,7 @@ import (
 	"encoding"
 	"fmt"
 	"strings"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -17,7 +18,13 @@ func (a *ApplicationList) MarshalText() (text []byte, err error) {
 	var ret strings.Builder
 	for _, app := range a.Application {
 		for _, rel := range app.ReleaseCandidate {
-			ret.WriteString(fmt.Sprintf("%s %s %s %d\n", app.Name, rel.Name, rel.Status, rel.ExistingPR))
+			txt, err := rel.MarshalText()
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal release candidate: %w", err)
+			}
+			if _, err := fmt.Fprintf(&ret, "%s %s\n", app.Name, txt); err != nil {
+				return nil, fmt.Errorf("failed to write to string: %w", err)
+			}
 		}
 	}
 	return []byte(ret.String()), nil
@@ -26,9 +33,15 @@ func (a *ApplicationList) MarshalText() (text []byte, err error) {
 var _ encoding.TextMarshaler = &ApplicationList{}
 
 type ReleaseCandidate struct {
-	Name       string                 `json:"name"`
-	Status     ReleaseCandidateStatus `json:"status"`
-	ExistingPR int64                  `json:"existing_pr"`
+	Name        string                 `json:"name"`
+	Status      ReleaseCandidateStatus `json:"status"`
+	ExistingPR  int64                  `json:"existing_pr"`
+	OriginalSHA string                 `json:"original_sha"`
+	Age         time.Duration          `json:"age"`
+}
+
+func (r *ReleaseCandidate) MarshalText() (text []byte, err error) {
+	return []byte(fmt.Sprintf("%s %s %d %s %s", r.Name, r.Status, r.ExistingPR, r.OriginalSHA, r.Age)), nil
 }
 
 type Application struct {
@@ -107,6 +120,15 @@ func DoesApplicationExist(a Api, application string) (bool, error) {
 	return false, nil
 }
 
+func NeedsPromotion(ctx context.Context, a Api, application string, release string) (bool, error) {
+	old, newRelease, err := a.PreviewRelease(ctx, application, release, true)
+	if err != nil {
+		return false, fmt.Errorf("failed to get preview for %s:%s: %w", application, release, err)
+	}
+	hasChange := old.Yaml() != newRelease.Yaml()
+	return hasChange, nil
+}
+
 func GetAllReleaseStatus(ctx context.Context, a Api) (*ApplicationList, error) {
 	apps, err := a.ListApplications()
 	if err != nil {
@@ -130,14 +152,22 @@ func GetAllReleaseStatus(ctx context.Context, a Api) (*ApplicationList, error) {
 				})
 				continue
 			}
-			old, newRelease, err := a.PreviewRelease(app.Name, release)
+			hasChange, err := NeedsPromotion(egCtx, a, app.Name, release)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get preview for %s:%s: %w", app.Name, release, err)
 			}
-			hasChange := old.Yaml() != newRelease.Yaml()
+			existingRelease, err := a.GetRelease(app.Name, release)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get preview for %s:%s: %w", app.Name, release, err)
+			}
+			releaseConfig, err := existingRelease.loadReleaseConfig()
+			if err != nil {
+				return nil, fmt.Errorf("failed to load release config for %s:%s: %w", app.Name, release, err)
+			}
 			rc := &ReleaseCandidate{
-				Name:   release,
-				Status: getStatus(hasChange),
+				Name:        release,
+				Status:      getStatus(hasChange),
+				OriginalSHA: releaseConfig.Metadata.OriginalRelease.GitSha,
 			}
 			if rc.Status == RC_STATUS_PENDING {
 				a := a

@@ -125,8 +125,8 @@ func GetRelease(_ context.Context, application string, release string) error {
 
 // PreviewRelease will show what a new release will look like, promoting from the previous version.  It returns the
 // old release and the new release.
-func PreviewRelease(_ context.Context, application string, release string) error {
-	oldRelease, newRelease, err := MustGetInstance().PreviewRelease(application, release)
+func PreviewRelease(ctx context.Context, application string, release string) error {
+	oldRelease, newRelease, err := MustGetInstance().PreviewRelease(ctx, application, release, true)
 	if err != nil {
 		return err
 	}
@@ -138,8 +138,8 @@ func PreviewRelease(_ context.Context, application string, release string) error
 
 // ApplyRelease will promote a release to be the current version by applying the previously
 // fetched PreviewRelease
-func ApplyRelease(_ context.Context, application string, release string) error {
-	oldRelease, newRelease, err := MustGetInstance().PreviewRelease(application, release)
+func ApplyRelease(ctx context.Context, application string, release string) error {
+	oldRelease, newRelease, err := MustGetInstance().PreviewRelease(ctx, application, release, false)
 	if err != nil {
 		return err
 	}

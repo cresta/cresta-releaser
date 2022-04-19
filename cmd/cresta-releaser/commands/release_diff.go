@@ -12,7 +12,7 @@ var releaseDiffCmd = &cobra.Command{
 	Short:   "Diff what would change in a release",
 	Example: "cresta-releaser release diff customer-namespace 00-staging",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		oldRelease, newRelease, err := api.PreviewRelease(args[0], args[1])
+		oldRelease, newRelease, err := api.PreviewRelease(cmd.Context(), args[0], args[1], true)
 		cobra.CheckErr(err)
 		oldContent, newContent := oldRelease.Yaml(), newRelease.Yaml()
 		d := diffmatchpatch.New()

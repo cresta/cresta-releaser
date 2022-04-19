@@ -76,7 +76,7 @@ func (s *Server) PushPromotion(ctx context.Context, request *releaser_protobuf.P
 	if err := s.Api.FreshGitBranch(ctx, request.ApplicationName, request.ReleaseName, ""); err != nil {
 		return nil, fmt.Errorf("failed to create branch %s: %w", branchName, err)
 	}
-	oldRelease, newRelease, err := s.Api.PreviewRelease(request.ApplicationName, request.ReleaseName)
+	oldRelease, newRelease, err := s.Api.PreviewRelease(ctx, request.ApplicationName, request.ReleaseName, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to preview release: %w", err)
 	}
