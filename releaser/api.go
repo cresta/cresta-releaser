@@ -665,21 +665,11 @@ type Release struct {
 }
 
 func (r *Release) cleanReleaseConfig() {
-	f, exists := r.getFile(releaserFileName)
-	if !exists {
-		return
-	}
-	rc, err := r.loadReleaseConfig()
-	if err != nil {
-		return
-	}
-	rc.Metadata = ReleaseConfigMetadata{}
-	b, err := yaml.Marshal(rc)
-	if err != nil {
-		return
-	}
-	f.Content = string(b)
-	r.updateFile(f.Name, f)
+	r.updateFile(releaserFileName, ReleaseFile{
+		Name:      releaserFileName,
+		Directory: "",
+		Content:   "",
+	})
 }
 
 func (r *Release) loadReleaseConfig() (*ReleaseConfig, error) {
@@ -716,7 +706,17 @@ func (r *Release) getFile(name string) (ReleaseFile, bool) {
 	return ReleaseFile{}, false
 }
 
+func (r *Release) SortFilesByNameAndDirectory() {
+	sort.Slice(r.Files, func(i, j int) bool {
+		if r.Files[i].Name == r.Files[j].Name {
+			return r.Files[i].Directory < r.Files[j].Directory
+		}
+		return r.Files[i].Name < r.Files[j].Name
+	})
+}
+
 func (r *Release) Yaml() string {
+	r.SortFilesByNameAndDirectory()
 	var b bytes.Buffer
 	for idx, f := range r.Files {
 		if idx != 0 {
