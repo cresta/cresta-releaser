@@ -280,32 +280,32 @@ func (f *FromCommandLine) FreshGitBranch(ctx context.Context, application string
 
 func (f *FromCommandLine) ApplyRelease(application string, release string, oldRelease *Release, newRelease *Release) error {
 	releaseDirectory := filepath.Join("apps", application, "releases", release)
-	oldFiles := oldRelease.FilesByName()
-	newFiles := newRelease.FilesByName()
-	for fileName, file := range oldFiles {
-		newContent, exists := newFiles[fileName]
+	oldFiles := oldRelease.FilesByLocation()
+	newFiles := newRelease.FilesByLocation()
+	for fileLocation, file := range oldFiles {
+		newContent, exists := newFiles[fileLocation]
 		if !exists {
-			if err := f.Fs.DeleteFile(filepath.Join(releaseDirectory, file.Directory), fileName); err != nil {
-				return fmt.Errorf("error deleting file %s: %s", fileName, err)
+			if err := f.Fs.DeleteFile(filepath.Join(releaseDirectory, fileLocation.Directory), fileLocation.Name); err != nil {
+				return fmt.Errorf("error deleting file %s: %s", fileLocation, err)
 			}
 			continue
 		}
 		if file.Content != newContent.Content {
-			if err := f.Fs.ModifyFileContent(filepath.Join(releaseDirectory, file.Directory), fileName, newContent.Content); err != nil {
-				return fmt.Errorf("error modifying file %s: %s", fileName, err)
+			if err := f.Fs.ModifyFileContent(filepath.Join(releaseDirectory, fileLocation.Directory), fileLocation.Name, newContent.Content); err != nil {
+				return fmt.Errorf("error modifying file %s: %s", fileLocation, err)
 			}
 		}
 	}
-	for fileName, file := range newFiles {
-		_, exists := oldFiles[fileName]
+	for fileLocation, file := range newFiles {
+		_, exists := oldFiles[fileLocation]
 		if exists {
 			continue
 		}
-		if err := f.Fs.CreateDirectory(filepath.Join(releaseDirectory, file.Directory)); err != nil {
+		if err := f.Fs.CreateDirectory(filepath.Join(releaseDirectory, fileLocation.Directory)); err != nil {
 			return fmt.Errorf("error creating directory %s: %s", file.Directory, err)
 		}
-		if err := f.Fs.CreateFile(filepath.Join(releaseDirectory, file.Directory), fileName, file.Content, 0744); err != nil {
-			return fmt.Errorf("error creating file %s: %s", fileName, err)
+		if err := f.Fs.CreateFile(filepath.Join(releaseDirectory, fileLocation.Directory), fileLocation.Name, file.Content, 0744); err != nil {
+			return fmt.Errorf("error creating file %s: %s", fileLocation, err)
 		}
 	}
 	return nil
@@ -731,10 +731,18 @@ func (r *Release) Yaml() string {
 	return b.String()
 }
 
-func (r *Release) FilesByName() map[string]ReleaseFile {
-	files := make(map[string]ReleaseFile)
+type FileLocation struct {
+	Directory string
+	Name      string
+}
+
+func (r *Release) FilesByLocation() map[FileLocation]ReleaseFile {
+	files := make(map[FileLocation]ReleaseFile)
 	for _, f := range r.Files {
-		files[f.Name] = f
+		files[FileLocation{
+			Directory: f.Directory,
+			Name:      f.Name,
+		}] = f
 	}
 	return files
 }
