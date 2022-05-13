@@ -104,7 +104,7 @@ func (f *FromCommandLine) CreateApplicationFromTemplate(templateDir string, appl
 
 func checkForTemplateExtensions(fileName string, fileContent string) (string, string) {
 	lines := strings.Split(fileContent, "\n")
-	newFilenameRegex := regexp.MustCompile("^#\\s*filename:\\s*(.*)$")
+	newFilenameRegex := regexp.MustCompile(`^#\s*filename:\s*(.*)$`)
 	newFilenameMatch := newFilenameRegex.FindStringSubmatch(lines[0])
 	if len(newFilenameMatch) > 1 {
 		newFilename := strings.TrimSpace(newFilenameMatch[1])

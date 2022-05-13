@@ -66,6 +66,7 @@ func WithEmptyExampleApplication(t *testing.T, f func(directory string, inst Api
 	dir, err := os.MkdirTemp("", "releaser-test")
 	require.NoError(t, err)
 	currentDir, err := os.Getwd()
+	require.NoError(t, err)
 	require.NoError(t, os.Chdir(dir))
 	defer func() {
 		require.NoError(t, os.Chdir(currentDir))
