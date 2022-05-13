@@ -27,6 +27,32 @@ type FromCommandLine struct {
 	Logger *zap.Logger
 }
 
+const emptyKustomizeFile = `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+`
+
+func (f *FromCommandLine) CreateApplicationMirrorRelease(applicationName string, copyFrom string) error {
+	newReleases, err := f.ListReleases(copyFrom)
+	if err != nil {
+		return fmt.Errorf("unable to list releases: %w", err)
+	}
+	if err := f.Fs.CreateDirectory(filepath.Join("apps", applicationName)); err != nil {
+		return fmt.Errorf("unable to create directory %s: %w", applicationName, err)
+	}
+	if err := f.Fs.CreateDirectory(filepath.Join("apps", applicationName, "releases")); err != nil {
+		return fmt.Errorf("unable to create releases %s: %w", applicationName, err)
+	}
+	for _, r := range newReleases {
+		if err := f.Fs.CreateDirectory(filepath.Join("apps", applicationName, "releases", r)); err != nil {
+			return fmt.Errorf("unable to create single release %s: %w", r, err)
+		}
+		if err := f.Fs.CreateFile(filepath.Join("apps", applicationName, "releases", r), "kustomization.yaml", emptyKustomizeFile, 0744); err != nil {
+			return fmt.Errorf("unable to create kustomization file for release %s: %w", r, err)
+		}
+	}
+	return nil
+}
+
 func (f *FromCommandLine) CreateApplicationFromTemplate(templateDir string, applicationName string, data interface{}) error {
 	if exists, err := f.Fs.DirectoryExists(templateDir); err != nil {
 		return fmt.Errorf("unable to check if template directory %s exists: %w", templateDir, err)
@@ -763,6 +789,8 @@ type Api interface {
 	CreateChildApplication(parent string, child string) error
 	// CreateApplicationFromTemplate creates a new application from a go template directory
 	CreateApplicationFromTemplate(templateDir string, applicationName string, data interface{}) error
+	// CreateApplicationMirrorRelease creates a new empty application that has the same release structure
+	CreateApplicationMirrorRelease(applicationName string, copyFrom string) error
 	// ListReleases will list all releases for an application
 	ListReleases(application string) ([]string, error)
 	// ListApplications will list all applications
