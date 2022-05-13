@@ -317,8 +317,7 @@ func mergeGithubConfigs(cfg *NewGQLClientConfig, config *NewGQLClientConfig) *Ne
 	if cfg == nil {
 		return config
 	}
-	var ret NewGQLClientConfig
-	ret = *cfg
+	ret := *cfg
 	if ret.Rt == nil {
 		ret.Rt = config.Rt
 	}
