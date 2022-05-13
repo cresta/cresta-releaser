@@ -87,6 +87,11 @@ func CreateApplicationFromTemplate(_ context.Context, name string, templateDir s
 	return MustGetInstance().CreateApplicationFromTemplate(templateDir, name, extraData)
 }
 
+// CreateApplicationMirrorRelease creates a new application with a release process mirroring another
+func CreateApplicationMirrorRelease(_ context.Context, application string, release string) error {
+	return MustGetInstance().CreateApplicationMirrorRelease(application, release)
+}
+
 // ListApplications will list all applications
 func ListApplications(_ context.Context) error {
 	apps, err := MustGetInstance().ListApplications()
