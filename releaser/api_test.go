@@ -82,7 +82,9 @@ func WithEmptyExampleApplication(t *testing.T, f func(directory string, inst Api
 	l := zap.NewProductionConfig()
 	logger, err := l.Build()
 	require.NoError(t, err)
-	inst, err := NewFromCommandLine(context.Background(), logger, nil)
+	inst, err := NewFromCommandLine(context.Background(), logger, &NewGQLClientConfig{
+		Token: "unset",
+	})
 
 	require.NoError(t, err)
 	require.NoError(t, err)
