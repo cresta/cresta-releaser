@@ -318,19 +318,20 @@ func mergeGithubConfigs(cfg *NewGQLClientConfig, config *NewGQLClientConfig) *Ne
 		return config
 	}
 	var ret NewGQLClientConfig
-	if cfg.Rt == nil {
+	ret = *cfg
+	if ret.Rt == nil {
 		ret.Rt = config.Rt
 	}
-	if cfg.AppID == 0 {
+	if ret.AppID == 0 {
 		ret.AppID = config.AppID
 	}
-	if cfg.InstallationID == 0 {
+	if ret.InstallationID == 0 {
 		ret.InstallationID = config.InstallationID
 	}
-	if cfg.PEMKeyLoc == "" {
+	if ret.PEMKeyLoc == "" {
 		ret.PEMKeyLoc = config.PEMKeyLoc
 	}
-	if cfg.Token == "" {
+	if ret.Token == "" {
 		ret.Token = config.Token
 	}
 	return &ret
