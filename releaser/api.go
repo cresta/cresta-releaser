@@ -408,7 +408,7 @@ func (f *FromCommandLine) patchApplicationInNamespace(cluster, namespace, applic
 }
 
 func (f *FromCommandLine) guessApplicationRelease(cluster, namespace, application string) (string, error) {
-	staging := strings.Index(cluster, "staging") != -1
+	staging := strings.Contains(cluster, "staging")
 	releases, err := f.ListReleases(application)
 	if err != nil {
 		return "", err
@@ -420,7 +420,7 @@ func (f *FromCommandLine) guessApplicationRelease(cluster, namespace, applicatio
 		return releases[0], nil
 	}
 	for _, r := range releases {
-		if strings.Index(r, "prod") != -1 {
+		if strings.Contains(r, "prod") {
 			return r, nil
 		}
 	}
