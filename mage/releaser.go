@@ -92,6 +92,14 @@ func CreateApplicationMirrorRelease(_ context.Context, application string, relea
 	return MustGetInstance().CreateApplicationMirrorRelease(application, release)
 }
 
+// PatchApplicationInNamespaces creates per-namespace and per-cluster kustomization patches for an application
+//
+// If locatorApplication is not empty, all namespaces that have locatorApplication as the kustomization resource
+// will be patched. If it's empty, all namespaces that have applicationName will be patched.
+func PatchApplicationInNamespaces(_ context.Context, applicationName, locatorApplication string) error {
+	return MustGetInstance().PatchApplicationInNamespaces(applicationName, locatorApplication)
+}
+
 // ListApplications will list all applications
 func ListApplications(_ context.Context) error {
 	apps, err := MustGetInstance().ListApplications()
