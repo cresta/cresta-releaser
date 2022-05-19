@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -27,9 +28,21 @@ type FromCommandLine struct {
 	Logger *zap.Logger
 }
 
-const emptyKustomizeFile = `apiVersion: kustomize.config.k8s.io/v1beta1
+const (
+	emptyKustomizeFile = `apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 `
+	emptyPatchFile = `apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: ignored
+spec:
+  values: {}
+`
+	releasesDirname       = "releases"
+	kustomizationsDirname = "_kustomizations"
+	kustomizationFilename = "kustomization.yaml"
+)
 
 func (f *FromCommandLine) CreateApplicationMirrorRelease(applicationName string, copyFrom string) error {
 	newReleases, err := f.ListReleases(copyFrom)
@@ -46,7 +59,7 @@ func (f *FromCommandLine) CreateApplicationMirrorRelease(applicationName string,
 		if err := f.Fs.CreateDirectory(filepath.Join("apps", applicationName, "releases", r)); err != nil {
 			return fmt.Errorf("unable to create single release %s: %w", r, err)
 		}
-		if err := f.Fs.CreateFile(filepath.Join("apps", applicationName, "releases", r), "kustomization.yaml", emptyKustomizeFile, 0744); err != nil {
+		if err := f.Fs.CreateFile(filepath.Join("apps", applicationName, "releases", r), kustomizationFilename, emptyKustomizeFile, 0744); err != nil {
 			return fmt.Errorf("unable to create kustomization file for release %s: %w", r, err)
 		}
 	}
@@ -174,12 +187,12 @@ func (f *FromCommandLine) CreateChildApplication(parent string, child string) er
 			if err := f.Fs.CreateDirectory(filepath.Join("apps", child, "releases", release)); err != nil {
 				return fmt.Errorf("failed to create child application directory release %s:%s: %w", child, release, err)
 			}
-			if err := f.Fs.CreateFile(filepath.Join("apps", child, "releases", release), "kustomization.yaml", kustomizeFileContent, 0755); err != nil {
+			if err := f.Fs.CreateFile(filepath.Join("apps", child, "releases", release), kustomizationFilename, kustomizeFileContent, 0755); err != nil {
 				return fmt.Errorf("unable to create kustomization file for child application %s:%s: %w", child, release, err)
 			}
 		}
 	} else {
-		if err := f.Fs.CreateFile(filepath.Join("apps", child), "kustomization.yaml", kustomizeFileContent, 0755); err != nil {
+		if err := f.Fs.CreateFile(filepath.Join("apps", child), kustomizationFilename, kustomizeFileContent, 0755); err != nil {
 			return fmt.Errorf("unable to create kustomization file for child application %s: %w", child, err)
 		}
 	}
@@ -211,6 +224,231 @@ func (f *FromCommandLine) CreateChildApplication(parent string, child string) er
 	}
 	if err := f.Fs.ModifyFileContent(parentKustomizationPath, parentKustomizationFile, string(newContent)); err != nil {
 		return fmt.Errorf("failed to modify kustomization file for parent application %s: %w", parent, err)
+	}
+	return nil
+}
+
+func (f *FromCommandLine) PatchApplicationInNamespaces(applicationName, locatorApplication string) error {
+	if locatorApplication == "" {
+		locatorApplication = applicationName
+	}
+	doesApplicationExist, err := DoesApplicationExist(f, applicationName)
+	if err != nil {
+		return fmt.Errorf("failed to check if application %s exists: %w", applicationName, err)
+	}
+	if !doesApplicationExist {
+		return fmt.Errorf("application %s does not exist", applicationName)
+	}
+	doesLocatorApplicationExist, err := DoesApplicationExist(f, locatorApplication)
+	if err != nil {
+		return fmt.Errorf("failed to check if application %s exists: %w", locatorApplication, err)
+	}
+	if !doesLocatorApplicationExist {
+		return fmt.Errorf("application %s does not exist", locatorApplication)
+	}
+
+	clusters, err := f.ListClusters()
+	if err != nil {
+		return err
+	}
+
+	for _, cluster := range clusters {
+		namespaces, err := f.ListNamespaces(cluster)
+		if err != nil {
+			return err
+		}
+		patched := false
+		for _, namespace := range namespaces {
+			kc, apps, err := f.listApplicationsUsed(filepath.Join(releasesDirname, cluster, namespace))
+			if err != nil {
+				return err
+			}
+			if _, ok := apps[locatorApplication]; !ok {
+				fmt.Printf("skipping namespace %s/%s\n", cluster, namespace)
+				continue
+			}
+			fmt.Printf("patching namespace %s/%s\n", cluster, namespace)
+			err = f.patchApplicationInNamespace(cluster, namespace, applicationName, kc, apps)
+			if err != nil {
+				return err
+			}
+			patched = true
+		}
+		if patched {
+			err = f.createPatchInCluster(cluster, applicationName)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// listApplicationsUsed lists all applications referenced directly or indirectly by a directory's kustomization.yaml file.
+func (f *FromCommandLine) listApplicationsUsed(dir string) (*types.Kustomization, map[string]struct{}, error) {
+	queue := []string{dir}
+	queued := map[string]struct{}{dir: {}}
+	apps := map[string]struct{}{}
+	var kustomization *types.Kustomization
+	// Traverse all referenced resources using BFS
+	for len(queue) > 0 {
+		d := queue[0]
+		queue = queue[1:]
+		var dir string
+		var file string
+		exists, err := f.Fs.DirectoryExists(d)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to check if directory %s exists: %w", d, err)
+		}
+		if exists {
+			dir = d
+			file = kustomizationFilename
+		} else {
+			dir = filepath.Dir(d)
+			file = filepath.Base(d)
+		}
+		if file != kustomizationFilename {
+			// Skip non-kustomization files.
+			continue
+		}
+		var kc types.Kustomization
+		content, err := f.Fs.ReadFile(dir, file)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read kustomization file in directory %s: %w", dir, err)
+		}
+		if err := yaml.UnmarshalStrict(content, &kc); err != nil {
+			return nil, nil, fmt.Errorf("failed to unmarshal kustomization file in directory %s: %w", dir, err)
+		}
+		for _, r := range kc.Resources {
+			path := filepath.Clean(filepath.Join(dir, r))
+			if _, ok := queued[path]; ok {
+				continue
+			}
+			queue = append(queue, path)
+			queued[path] = struct{}{}
+
+			parts := strings.Split(path, "/")
+			if len(path) >= 2 && parts[0] == "apps" {
+				apps[parts[1]] = struct{}{}
+			}
+		}
+		if kustomization == nil {
+			kustomization = &kc
+		}
+	}
+	return kustomization, apps, nil
+}
+
+func (f *FromCommandLine) patchApplicationInNamespace(cluster, namespace, application string, kc *types.Kustomization, apps map[string]struct{}) error {
+	dir := filepath.Join(releasesDirname, cluster, namespace)
+	exists, err := f.Fs.FileExists(dir, kustomizationFilename)
+	if err != nil {
+		return fmt.Errorf("failed to check if the kustomization.yaml file exists in %s: %w", dir, err)
+	}
+	if !exists {
+		return fmt.Errorf("kustomization.yaml file doesn't exist in directory %s", dir)
+	}
+
+	// Create the patch file if not exists
+	patchFilename := fmt.Sprintf("patch-helmrelease-%s.yaml", application)
+	patchExists, err := f.Fs.FileExists(dir, patchFilename)
+	if err != nil {
+		return fmt.Errorf("failed to check if the kustomization.yaml file exists in %s: %w", dir, err)
+	}
+	if !patchExists {
+		fmt.Printf("creating patch files in namespace %s\n", namespace)
+		if err := f.Fs.CreateFile(dir, patchFilename, emptyPatchFile, 0744); err != nil {
+			return fmt.Errorf("unable to create patch file %s/%s: %w", dir, patchFilename, err)
+		}
+	}
+
+	yqCommand := []string{}
+	// Add the per-namespace and per-cluster patch file to kustomization.yaml if not exists
+	patchPaths := make(map[string]struct{}, len(kc.Patches))
+	newPatchPaths := []string{}
+	for _, p := range kc.Patches {
+		patchPaths[p.Path] = struct{}{}
+	}
+	for _, p := range []string{filepath.Join("..", kustomizationsDirname, application, patchFilename), patchFilename} {
+		if _, ok := patchPaths[p]; !ok {
+			newPatchPaths = append(newPatchPaths, p)
+		}
+	}
+	if len(newPatchPaths) > 0 {
+		yqCommand = append(yqCommand, ".patches += [")
+		for i, p := range newPatchPaths {
+			if i > 0 {
+				yqCommand = append(yqCommand, ",")
+			}
+			newPatch := fmt.Sprintf(`{"path": "%s", "target": {"kind": "HelmRelease", "name": "%s"}}`, p, application)
+			yqCommand = append(yqCommand, newPatch)
+		}
+		yqCommand = append(yqCommand, "]")
+	}
+
+	// Add the application as the resource of the namespace
+	if _, ok := apps[application]; !ok {
+		if len(yqCommand) > 0 {
+			yqCommand = append(yqCommand, " | ")
+		}
+		release, err := f.guessApplicationRelease(cluster, namespace, application)
+		if err != nil {
+			return fmt.Errorf("unable to guess application %s release stage in %s/%s: %w", application, cluster, namespace, err)
+		}
+		yqCommand = append(yqCommand, fmt.Sprintf(`.resources += "../../../apps/%s/releases/%s"`, application, release))
+	}
+
+	// Use yq to update the yaml file. It keeps the field order and comments better than marshaling in Go.
+	cmd := exec.Command("yq", "-i", "eval", strings.Join(yqCommand, ""), filepath.Join(dir, kustomizationFilename))
+	err = cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to update kustomization file with command '%v': %w", cmd, err)
+	}
+	return nil
+}
+
+func (f *FromCommandLine) guessApplicationRelease(cluster, namespace, application string) (string, error) {
+	staging := strings.Index(cluster, "staging") != -1
+	releases, err := f.ListReleases(application)
+	if err != nil {
+		return "", err
+	}
+	if len(releases) == 0 {
+		return "", fmt.Errorf("application %s has no release", application)
+	}
+	if staging {
+		return releases[0], nil
+	}
+	for _, r := range releases {
+		if strings.Index(r, "prod") != -1 {
+			return r, nil
+		}
+	}
+	return "", fmt.Errorf("cannot find prod release for application %s among releases %v", application, releases)
+}
+
+func (f *FromCommandLine) createPatchInCluster(cluster, application string) error {
+	// Create the patch file if not exists
+	dir := filepath.Join(releasesDirname, cluster, kustomizationsDirname, application)
+	dirExists, err := f.Fs.DirectoryExists(dir)
+	if err != nil {
+		return fmt.Errorf("failed to check if the cluster patch directory %s exists: %w", dir, err)
+	}
+	if !dirExists {
+		if err := f.Fs.CreateDirectory(dir); err != nil {
+			return fmt.Errorf("unable to create cluster patch directory %s: %w", dir, err)
+		}
+	}
+	patchFilename := fmt.Sprintf("patch-helmrelease-%s.yaml", application)
+	patchExists, err := f.Fs.FileExists(dir, patchFilename)
+	if err != nil {
+		return fmt.Errorf("failed to check if the cluster patch file exists in %s: %w", dir, err)
+	}
+	if !patchExists {
+		fmt.Printf("creating patch files in cluster %s\n", cluster)
+		if err := f.Fs.CreateFile(dir, patchFilename, emptyPatchFile, 0744); err != nil {
+			return fmt.Errorf("unable to create patch file %s/%s: %w", dir, patchFilename, err)
+		}
 	}
 	return nil
 }
@@ -305,7 +543,7 @@ func (f *FromCommandLine) FreshGitBranch(ctx context.Context, application string
 }
 
 func (f *FromCommandLine) ApplyRelease(application string, release string, oldRelease *Release, newRelease *Release) error {
-	releaseDirectory := filepath.Join("apps", application, "releases", release)
+	releaseDirectory := filepath.Join("apps", application, releasesDirname, release)
 	oldFiles := oldRelease.FilesByLocation()
 	newFiles := newRelease.FilesByLocation()
 	for fileLocation, file := range oldFiles {
@@ -338,7 +576,7 @@ func (f *FromCommandLine) ApplyRelease(application string, release string, oldRe
 }
 
 func (f *FromCommandLine) isReleaseSymlink(application string, release string) bool {
-	releaseDirectory := filepath.Join("apps", application, "releases", release)
+	releaseDirectory := filepath.Join("apps", application, releasesDirname, release)
 	fi, err := os.Stat(releaseDirectory)
 	if err != nil {
 		return false
@@ -458,7 +696,7 @@ func ReleaseConfigForRelease(fs FileSystem, application string, release string) 
 	possibleConfigPaths := []string{
 		filepath.Join("apps"),
 		filepath.Join("apps", application),
-		filepath.Join("apps", application, "releases", release),
+		filepath.Join("apps", application, releasesDirname, release),
 	}
 	var ret *ReleaseConfig
 	for _, p := range possibleConfigPaths {
@@ -582,7 +820,7 @@ func (f *FromCommandLine) GetRelease(application string, release string) (*Relea
 	if !existsApp {
 		return nil, fmt.Errorf("application %s does not exist", application)
 	}
-	existsReleases, err := f.Fs.DirectoryExists(filepath.Join("apps", application, "releases"))
+	existsReleases, err := f.Fs.DirectoryExists(filepath.Join("apps", application, releasesDirname))
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if releases directory exists %s: %w", application, err)
 	}
@@ -592,14 +830,14 @@ func (f *FromCommandLine) GetRelease(application string, release string) (*Relea
 		}
 		return nil, fmt.Errorf("releases directory does not exist for application %s", application)
 	}
-	existsRelease, err := f.Fs.DirectoryExists(filepath.Join("apps", application, "releases", release))
+	existsRelease, err := f.Fs.DirectoryExists(filepath.Join("apps", application, releasesDirname, release))
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if existing release directory exists %s: %w", application, err)
 	}
 	if !existsRelease {
 		return nil, fmt.Errorf("release %s does not exist", release)
 	}
-	return f.releaseInPath(filepath.Join("apps", application, "releases", release))
+	return f.releaseInPath(filepath.Join("apps", application, releasesDirname, release))
 }
 
 func (f *FromCommandLine) releaseInPath(path string) (*Release, error) {
@@ -669,18 +907,76 @@ func (f *FromCommandLine) ListReleases(application string) ([]string, error) {
 	if !existsApp {
 		return nil, fmt.Errorf("application %s does not exist", application)
 	}
-	existsReleases, err := f.Fs.DirectoryExists(filepath.Join("apps", application, "releases"))
+	existsReleases, err := f.Fs.DirectoryExists(filepath.Join("apps", application, releasesDirname))
 	if err != nil {
 		return nil, fmt.Errorf("failed to check if releases directory exists %s: %w", application, err)
 	}
 	if !existsReleases {
 		return nil, nil
 	}
-	dirs, err := f.Fs.DirectoriesInsideDirectory(filepath.Join("apps", application, "releases"))
+	dirs, err := f.Fs.DirectoriesInsideDirectory(filepath.Join("apps", application, releasesDirname))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list releases for application %s: %w", application, err)
 	}
 	return dirs, nil
+}
+
+func (f *FromCommandLine) ListClusters() ([]string, error) {
+	exists, err := f.Fs.DirectoryExists(releasesDirname)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check if releases directory exists: %w", err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("releases directory does not exist")
+	}
+	dirs, err := f.Fs.DirectoriesInsideDirectory(releasesDirname)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list releases: %w", err)
+	}
+	clusters := []string{}
+	for _, dir := range dirs {
+		kustomizationExists, err := f.Fs.DirectoryExists(filepath.Join(releasesDirname, dir, kustomizationsDirname))
+		if err != nil {
+			return nil, fmt.Errorf("failed to check if cluster %s _kustomization directory exists: %w", dir, err)
+		}
+		if kustomizationExists {
+			clusters = append(clusters, dir)
+		}
+	}
+	return clusters, nil
+}
+
+func (f *FromCommandLine) ListNamespaces(cluster string) ([]string, error) {
+	clusterDir := filepath.Join(releasesDirname, cluster)
+	exists, err := f.Fs.DirectoryExists(clusterDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check if cluster directory %s exists: %w", clusterDir, err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("cluster directory %s does not exist", cluster)
+	}
+	clusterKustomizationExists, err := f.Fs.DirectoryExists(filepath.Join(releasesDirname, cluster, "_kustomizations"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to check if cluster %s _kustomizations directory exists: %w", cluster, err)
+	}
+	if !clusterKustomizationExists {
+		return nil, fmt.Errorf("cluster %s does not have _kustomization directory. It's not a flux 2 cluster", cluster)
+	}
+	dirs, err := f.Fs.DirectoriesInsideDirectory(clusterDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list namespaces in cluster directory %s: %w", clusterDir, err)
+	}
+	namespaces := []string{}
+	for _, namespace := range dirs {
+		kustomizationExists, err := f.Fs.FileExists(filepath.Join(clusterDir, namespace), kustomizationFilename)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check if namespace %s/%s kustomization.yaml file exists: %w", cluster, namespace, err)
+		}
+		if kustomizationExists {
+			namespaces = append(namespaces, namespace)
+		}
+	}
+	return namespaces, nil
 }
 
 var _ Api = &FromCommandLine{}
@@ -791,10 +1087,19 @@ type Api interface {
 	CreateApplicationFromTemplate(templateDir string, applicationName string, data interface{}) error
 	// CreateApplicationMirrorRelease creates a new empty application that has the same release structure
 	CreateApplicationMirrorRelease(applicationName string, copyFrom string) error
+	// PatchApplicationInNamespaces creates per-namespace and per-cluster kustomization patches for an application
+	//
+	// If locatorApplication is not empty, all namespaces that have locatorApplication as the kustomization resource
+	// will be patched. If it's empty, all namespaces that have applicationName will be patched.
+	PatchApplicationInNamespaces(applicationName, locatorApplication string) error
 	// ListReleases will list all releases for an application
 	ListReleases(application string) ([]string, error)
 	// ListApplications will list all applications
 	ListApplications() ([]string, error)
+	// ListClusters will list all clusters applicable to the releaser.
+	ListClusters() ([]string, error)
+	// ListNamespaces will list all namespaces within a cluster applicable to the releaser.
+	ListNamespaces(cluster string) ([]string, error)
 	// GetRelease will get a release for an application
 	GetRelease(application string, release string) (*Release, error)
 	// PreviewRelease will show what a new release will look like, promoting from the previous version.  It returns the
