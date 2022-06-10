@@ -107,8 +107,8 @@ func MustExec(t *testing.T, cmd *pipe.PipedCmd) {
 	ctx := context.Background()
 	err := cmd.Execute(ctx, nil, &stdout, &stderr)
 	if err != nil {
-		t.Log(stdout)
-		t.Log(stderr)
+		t.Log(stdout.String())
+		t.Log(stderr.String())
 		require.NoError(t, err)
 	}
 }
