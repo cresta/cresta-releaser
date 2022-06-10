@@ -407,8 +407,8 @@ func (c *ReleaseConfig) ApplyToFile(file ReleaseFile, previousReleaseName string
 }
 
 func (c *ReleaseConfig) mergeFrom(r ReleaseConfig) {
-	r.SearchReplace = append(r.SearchReplace, r.SearchReplace...)
-	r.RegexSearchReplace = append(r.RegexSearchReplace, r.RegexSearchReplace...)
+	c.SearchReplace = append(r.SearchReplace, c.SearchReplace...)
+	c.RegexSearchReplace = append(r.RegexSearchReplace, c.RegexSearchReplace...)
 }
 
 func (f *FromCommandLine) PreviewRelease(ctx context.Context, application string, release string, ignoreMetadataFile bool) (oldRelease *Release, newRelease *Release, err error) {

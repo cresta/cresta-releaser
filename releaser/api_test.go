@@ -5,10 +5,36 @@ import (
 	"go.uber.org/zap"
 	"os"
 	"path/filepath"
+	"sigs.k8s.io/yaml"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestReleaseConfigMergeFrom(t *testing.T) {
+	c1 := `
+searchReplace:
+  - search: "name"
+    replace: "jack"
+`
+	c2 := `
+searchReplace:	
+  - search: "job"
+    replace: "nothing"
+`
+	var r1, r2 ReleaseConfig
+	require.NoError(t, yaml.Unmarshal([]byte(c1), &r1))
+	require.NoError(t, yaml.Unmarshal([]byte(c2), &r2))
+	r1.mergeFrom(r2)
+	releaserFile := ReleaseFile{
+		Name:      "test",
+		Directory: ".",
+		Content:   "I am name and I do job",
+	}
+	newContent, err := r1.ApplyToFile(releaserFile, "00-head", "01-staging")
+	require.NoError(t, err)
+	require.Equal(t, "I am jack and I do nothing", newContent)
+}
 
 func TestReleaseConfigRegex(t *testing.T) {
 	makeTest := func(regex string, oldContent string, newContent string) func(t *testing.T) {
