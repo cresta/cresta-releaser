@@ -377,15 +377,15 @@ type ReleaseConfig struct {
 }
 
 func (c *ReleaseConfig) ApplyToFile(file ReleaseFile, previousReleaseName string, newReleaseName string) (string, error) {
-	if c == nil {
-		return file.Content, nil
-	}
 	if file.Name == releaserFileName {
 		// Don't replace yourself
 		return file.Content, nil
 	}
 	content := file.Content
 	content = strings.ReplaceAll(content, previousReleaseName, newReleaseName)
+	if c == nil {
+		return content, nil
+	}
 	for _, sr := range c.SearchReplace {
 		content = strings.ReplaceAll(content, sr.Search, sr.Replace)
 	}
@@ -440,12 +440,13 @@ func (f *FromCommandLine) PreviewRelease(ctx context.Context, application string
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to get previous release %s: %w", previousReleaseName, err)
 	}
-	promotionConfig, err := ReleaseConfigForRelease(f.Fs, application, previousReleaseName)
+	promotionConfig, err := ReleaseConfigForRelease(f.Fs, application, previousReleaseName, false)
+	existingNewReleaseConfig, err := ReleaseConfigForRelease(f.Fs, application, release, true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to get promotion config for release %s: %w", previousReleaseName, err)
 	}
 	f.Logger.Debug("promotion config", zap.Any("config", promotionConfig))
-	nextRelease, err := describeNewRelease(ctx, prevRelease, previousReleaseName, release, promotionConfig, application, f.Git, ignoreMetadataFile)
+	nextRelease, err := describeNewRelease(ctx, prevRelease, previousReleaseName, release, promotionConfig, application, f.Git, ignoreMetadataFile, existingNewReleaseConfig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to describe new release: %w", err)
 	}
@@ -454,12 +455,12 @@ func (f *FromCommandLine) PreviewRelease(ctx context.Context, application string
 
 const releaserFileName = ".releaser.yaml"
 
-func ReleaseConfigForRelease(fs FileSystem, application string, release string) (*ReleaseConfig, error) {
-	possibleConfigPaths := []string{
-		filepath.Join("apps"),
-		filepath.Join("apps", application),
-		filepath.Join("apps", application, "releases", release),
+func ReleaseConfigForRelease(fs FileSystem, application string, release string, ignoreParents bool) (*ReleaseConfig, error) {
+	possibleConfigPaths := make([]string, 0, 3)
+	if !ignoreParents {
+		possibleConfigPaths = append(possibleConfigPaths, filepath.Join("apps"), filepath.Join("apps", application))
 	}
+	possibleConfigPaths = append(possibleConfigPaths, filepath.Join("apps", application, "releases", release))
 	var ret *ReleaseConfig
 	for _, p := range possibleConfigPaths {
 		exists, err := fs.FileExists(p, releaserFileName)
@@ -498,7 +499,7 @@ func ReleaseConfigFromRelease(release *Release) (*ReleaseConfig, error) {
 	return &r, nil
 }
 
-func describeNewRelease(ctx context.Context, promoteFrom *Release, previousName string, newName string, releaseConfig *ReleaseConfig, application string, g Git, ignoreMetadataFile bool) (*Release, error) {
+func describeNewRelease(ctx context.Context, promoteFrom *Release, previousName string, newName string, releaseConfig *ReleaseConfig, application string, g Git, ignoreMetadataFile bool, existingNewReleaseConfig *ReleaseConfig) (*Release, error) {
 	ret := &Release{}
 	for _, f := range promoteFrom.Files {
 		newContent, err := releaseConfig.ApplyToFile(f, previousName, newName)
@@ -512,50 +513,55 @@ func describeNewRelease(ctx context.Context, promoteFrom *Release, previousName 
 		})
 	}
 	if !ignoreMetadataFile {
-		newReleaserContent, err := newReleaseMetadata(ctx, promoteFrom, newName, application, g)
+		if existingNewReleaseConfig == nil {
+			existingNewReleaseConfig = &ReleaseConfig{}
+		}
+		newReleaserMetadata, err := newReleaseMetadata(ctx, promoteFrom, newName, application, g)
 		if err != nil {
 			return nil, fmt.Errorf("unable to generate new releaser content: %w", err)
 		}
-		ret.updateFile(releaserFileName, newReleaserContent)
+		existingNewReleaseConfig.Metadata = newReleaserMetadata
+		newContent, err := yaml.Marshal(existingNewReleaseConfig)
+		if err != nil {
+			return nil, fmt.Errorf("unable to marshal new release config")
+		}
+		ret.updateFile(releaserFileName, ReleaseFile{
+			Name:    releaserFileName,
+			Content: string(newContent),
+		})
 	}
 	ret.SortFilesByNameAndDirectory()
 	return ret, nil
 }
 
-func newReleaseMetadata(ctx context.Context, promoteFrom *Release, newName string, application string, g Git) (ReleaseFile, error) {
-	previous, err := ReleaseConfigFromRelease(promoteFrom)
+func newReleaseMetadata(ctx context.Context, promoteFrom *Release, newName string, application string, g Git) (ReleaseConfigMetadata, error) {
+	previousFullConfig, err := ReleaseConfigFromRelease(promoteFrom)
 	if err != nil {
-		return ReleaseFile{}, fmt.Errorf("unable to get previous release config: %w", err)
+		return ReleaseConfigMetadata{}, fmt.Errorf("unable to get previous release config: %w", err)
 	}
-	if previous == nil {
-		previous = &ReleaseConfig{}
+	var previousMetadata ReleaseConfigMetadata
+	if previousFullConfig != nil {
+		previousMetadata = previousFullConfig.Metadata
 	}
-	newConfig := &ReleaseConfig{}
-	newConfig.Metadata.ApplicationName = application
-	newConfig.Metadata.ReleaseName = newName
-	newConfig.Metadata.CurrentRelease.CreationTime = time.Now().UTC()
-	if previous.Metadata.OriginalRelease.CreationTime.IsZero() {
-		newConfig.Metadata.OriginalRelease.CreationTime = newConfig.Metadata.CurrentRelease.CreationTime
+	newMetadata := ReleaseConfigMetadata{}
+	newMetadata.ApplicationName = application
+	newMetadata.ReleaseName = newName
+	newMetadata.CurrentRelease.CreationTime = time.Now().UTC()
+	if previousMetadata.OriginalRelease.CreationTime.IsZero() {
+		newMetadata.OriginalRelease.CreationTime = newMetadata.CurrentRelease.CreationTime
 	} else {
-		newConfig.Metadata.OriginalRelease.CreationTime = previous.Metadata.OriginalRelease.CreationTime
+		newMetadata.OriginalRelease.CreationTime = previousMetadata.OriginalRelease.CreationTime
 	}
-	if previous.Metadata.OriginalRelease.GitSha == "" {
+	if previousMetadata.OriginalRelease.GitSha == "" {
 		sha, err := g.CurrentGitSha(ctx)
 		if err != nil {
-			return ReleaseFile{}, fmt.Errorf("unable to get release git sha: %w", err)
+			return ReleaseConfigMetadata{}, fmt.Errorf("unable to get release git sha: %w", err)
 		}
-		newConfig.Metadata.OriginalRelease.GitSha = sha
+		newMetadata.OriginalRelease.GitSha = sha
 	} else {
-		newConfig.Metadata.OriginalRelease.GitSha = previous.Metadata.OriginalRelease.GitSha
+		newMetadata.OriginalRelease.GitSha = previousMetadata.OriginalRelease.GitSha
 	}
-	content, err := yaml.Marshal(newConfig)
-	if err != nil {
-		return ReleaseFile{}, fmt.Errorf("unable to marshal release config: %w", err)
-	}
-	return ReleaseFile{
-		Name:    releaserFileName,
-		Content: string(content),
-	}, nil
+	return newMetadata, nil
 }
 
 func indexOf(s string, in []string) int {

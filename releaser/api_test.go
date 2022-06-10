@@ -2,9 +2,6 @@ package releaser
 
 import (
 	"context"
-	"go.uber.org/zap"
-	"os"
-	"path/filepath"
 	"sigs.k8s.io/yaml"
 	"testing"
 
@@ -88,36 +85,8 @@ line d`))
 `))
 }
 
-func WithEmptyExampleApplication(t *testing.T, f func(directory string, inst Api)) {
-	dir, err := os.MkdirTemp("", "releaser-test")
-	require.NoError(t, err)
-	currentDir, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(dir))
-	defer func() {
-		require.NoError(t, os.Chdir(currentDir))
-		require.NoError(t, os.RemoveAll(dir))
-	}()
-	require.NoError(t, os.Mkdir(filepath.Join(dir, "apps"), 0755))
-	require.NoError(t, os.Mkdir(filepath.Join(dir, "apps", "a1"), 0755))
-	require.NoError(t, os.Mkdir(filepath.Join(dir, "apps", "a1", "releases"), 0755))
-	require.NoError(t, os.Mkdir(filepath.Join(dir, "apps", "a1", "releases", "00-head"), 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "apps", "a1", "releases", "00-head", "config.yaml"), []byte(`release\nfrom/00-head`), 0644))
-	require.NoError(t, os.Mkdir(filepath.Join(dir, "apps", "a1", "releases", "01-staging"), 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "apps", "a1", "releases", "00-head", "config.yaml"), []byte(``), 0644))
-	l := zap.NewProductionConfig()
-	logger, err := l.Build()
-	require.NoError(t, err)
-	inst, err := NewFromCommandLine(context.Background(), logger, &NewGQLClientConfig{
-		Token: "unset",
-	})
-	require.NoError(t, err)
-	require.NoError(t, err)
-	f(dir, inst)
-}
-
 func TestReleaserReadOnly(t *testing.T) {
-	WithEmptyExampleApplication(t, func(_ string, inst Api) {
+	WithEmptyExampleApplication(t, func(inst Api) {
 		t.Run("ListApplications", func(t *testing.T) {
 			s, err := inst.ListApplications()
 			require.NoError(t, err)
@@ -137,14 +106,47 @@ func TestReleaserReadOnly(t *testing.T) {
 	})
 }
 
-func CreateApplicationMirrorRelease(t *testing.T) {
-	WithEmptyExampleApplication(t, func(_ string, inst Api) {
-		t.Run("CreateApplicationMirrorRelease", func(t *testing.T) {
-			err := inst.CreateApplicationMirrorRelease("a3", "a1")
-			require.NoError(t, err)
-			s, err := inst.ListApplications()
-			require.NoError(t, err)
-			require.Equal(t, []string{"a1", "a3"}, s)
+func RequireRelease(t *testing.T, ctx context.Context, inst Api, application string, release string) {
+	prev, newVersion, err := inst.PreviewRelease(ctx, application, release, false)
+	require.NoError(t, err)
+	require.NoError(t, inst.ApplyRelease(application, release, prev, newVersion))
+}
+
+func TestPromotion(t *testing.T) {
+	ctx := context.Background()
+	NewComplexSetup().WithLayout(ctx, t, func(inst Api) {
+		t.Run("promote fully a2", func(t *testing.T) {
+			t.Run("promote first", func(t *testing.T) {
+				RequireRelease(t, ctx, inst, "a2", "01-staging")
+				RequireFileMatches(t, "a2", "01-staging", "config.yaml", "hello world 01-staging YOU-ARE-01-staging")
+				t.Run("promote second", func(t *testing.T) {
+					RequireRelease(t, ctx, inst, "a2", "02-prod")
+					RequireFileMatches(t, "a2", "02-prod", "config.yaml", "replace self YOU-ARE-02-prod")
+				})
+			})
+		})
+	})
+	NewComplexSetup().WithLayout(ctx, t, func(inst Api) {
+		t.Run("promote fully a3", func(t *testing.T) {
+			t.Run("promote first", func(t *testing.T) {
+				RequireRelease(t, ctx, inst, "a3", "01-staging")
+				RequireFileMatches(t, "a3", "01-staging", "config.yaml", "basic promotion 01-staging 01-staging")
+				RequireFileMissing(t, "a3", "01-staging", "unknown")
+				t.Run("promote second", func(t *testing.T) {
+					RequireRelease(t, ctx, inst, "a3", "02-prod")
+					RequireFileMatches(t, "a3", "02-prod", "config.yaml", "basic promotion 02-prod 02-prod")
+					RequireFileMissing(t, "a3", "02-prod", "unknown")
+				})
+			})
+		})
+	})
+	NewComplexSetup().WithLayout(ctx, t, func(inst Api) {
+		t.Run("promote fully a4", func(t *testing.T) {
+			t.Run("promote first", func(t *testing.T) {
+				RequireRelease(t, ctx, inst, "a4", "01-staging")
+				RequireFileMatches(t, "a4", "01-staging", "config.yaml", "AWESOME PROJECT 01-staging 01-staging")
+				RequireFileMissing(t, "a4", "01-staging", "unknown")
+			})
 		})
 	})
 }
