@@ -98,6 +98,8 @@ func (d *RepositoryLayout) Setup(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte(content), 0644))
 	}
 	MustExec(t, pipe.Shell("git init"))
+	MustExec(t, pipe.Shell("git config --local user.email example@example.com"))
+	MustExec(t, pipe.Shell("git config --local user.name John Doe"))
 	MustExec(t, pipe.Shell("git add ."))
 	MustExec(t, pipe.Shell("git commit -am 'init'"))
 }
